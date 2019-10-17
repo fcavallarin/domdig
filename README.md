@@ -23,6 +23,12 @@ node domdig/domdig.js
 node domdig.js -c 'foo=bar' -p http:127.0.0.1:8080 https://htcap.org/scanme/domxss.php
 ```
 
+### Crawl Engine
+DOMDig uses [htcrawl](https://htcrawl.org) as crawling engine, the same engine used by [htcap](https://htcap.org).
+The video below shows the engine crawling gmail. The crawl lasted for many hours and about 3000 XHR request have been captured.
+
+[![crawling gmail](https://htcap.org/img/htcap-gmail-video.png)](https://www.youtube.com/watch?v=5FLmWjKE2JI "HTCAP Crawling Gmail")
+
 ### Login Sequence
 A login sequence (or initial sequence) is a json object containing a list of actions to take before the scan starts.
 Each element of the list is an array where the first element is the name of the action to take and the remaining elements are "parameters" to those actions.
