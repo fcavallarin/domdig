@@ -1,5 +1,6 @@
 ## DOMDig
-DOMDig is a DOM XSS scanner that runs inside the Chromium web browser and can scan single page applications (SPA) recursively.
+DOMDig is a DOM XSS scanner that runs inside the Chromium web browser and it can scan single page applications (SPA) recursively.  
+Unlike other scanners, DOMDig can crawl any webapplication (including gmail) by keeping track of DOM modifications and XHR/fetch/websocket requests and it can simulate a real user interaction by firing events. During this process, XSS payloads are put into input fields and their execution is tracked in order to find injection points and the related URL modifications.  
 It is based on [htcrawl](https://htcrawl.org), a node library powerful enough to easily crawl a gmail account.
 
 
@@ -24,7 +25,9 @@ node domdig.js -c 'foo=bar' -p http:127.0.0.1:8080 https://htcap.org/scanme/domx
 ```
 
 ### Crawl Engine
-DOMDig uses [htcrawl](https://htcrawl.org) as crawling engine, the same engine used by [htcap](https://htcap.org).
+DOMDig uses [htcrawl](https://htcrawl.org) as crawling engine, the same engine used by [htcap](https://htcap.org).  
+The diagram shows the recursive crawling proccess.  
+![SPA Crawling Diagram](https://htcrawl.org/img/htcap-flowchart.png) . 
 The video below shows the engine crawling gmail. The crawl lasted for many hours and about 3000 XHR request have been captured.
 
 [![crawling gmail](https://htcap.org/img/htcap-gmail-video.png)](https://www.youtube.com/watch?v=5FLmWjKE2JI "HTCAP Crawling Gmail")
