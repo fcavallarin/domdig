@@ -49,3 +49,14 @@ Actions are:
    ["clickToNavigate", "#btn-login"]
 ]
 ```
+
+### Payloads file
+Payloads can be loaded from json file (-P option) as array of strings. To build custom payloads, the string `window.___xssSink({0})` must be used as the function to be executed (instead of the classic `alert(1)`)
+
+#### Example
+```
+[
+   ';window.___xssSink({0});',
+   '<img src="a" onerror="window.___xssSink({0})">'
+]
+```
