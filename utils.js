@@ -13,16 +13,19 @@ exports.writeJSON = writeJSON;
 exports.prettifyJson = prettifyJson;
 exports.error = error;
 
-function addVulnerability(vuln, jar, verbose){
+function addVulnerability(vuln, jar, url, verbose){
 	p = vuln.payload.replace("window.___xssSink({0})", "alert(1)");
-	jar.push([p, vuln.element]);
+	jar.push([p, vuln.element, url]);
 	if(verbose){
 		printVulnerability(p, vuln.element);
 	}
 }
 
-function printVulnerability(payload, element){
-	const msg = chalk.red('[!]') + ` DOM XSS found: ${element} → ${payload}`;
+function printVulnerability(payload, element, url){
+	var msg = chalk.red('[!]') + ` DOM XSS found: ${element} → ${payload}`;
+	if(url){
+		msg += " → " + url;
+	}
 	console.log(msg);
 }
 
@@ -59,7 +62,7 @@ function usage(){
 		"                     COOKIES are read from that file",
 		"   -A CREDENTIALS    username and password used for HTTP",
 		"                     authentication separated by a colon",
-		"   -x TIMEOUT        set maximum execution time in second for each payload",
+		"   -x TIMEOUT        set maximum execution time in seconds for each payload",
 		"   -U USERAGENT      set user agent",
 		"   -R REFERER        set referer",
 		"   -p PROXY          proxy string protocol:host:port",

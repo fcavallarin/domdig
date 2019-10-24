@@ -5,6 +5,7 @@ const payloads = require('./payloads');
 const PAYLOADMAP = {};
 const VULNSJAR = [];
 var VERBOSE = true;
+var PREVURL = null;
 
 function getNewPayload(payload, element){
 	const k = "" + Math.floor(Math.random()*4000000000);
@@ -21,7 +22,11 @@ async function crawlAndFuzz(targetUrl, payload, options){
 
 	// set a sink on page scope
 	crawler.page().exposeFunction("___xssSink", function(key) {
-		utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, VERBOSE);
+		var url = "";
+		if(crawler.page().url() != PREVURL){
+			url = PREVURL = crawler.page().url();
+		}
+		utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, url, VERBOSE);
 	});
 
 	// fill all inputs with a payload
@@ -41,6 +46,7 @@ async function crawlAndFuzz(targetUrl, payload, options){
 			const p = getNewPayload(payload, "hash");
 			await crawler.page().evaluate(p => document.location.hash = p, p);
 			hashSet = true;
+			PREVURL = crawler.page().url();
 		}
 	});
 
@@ -50,6 +56,8 @@ async function crawlAndFuzz(targetUrl, payload, options){
 		console.log(`Error ${e}`);
 		process.exit(-3);
 	}
+
+	PREVURL = crawler.page().url();
 
 	if(options.initSequence){
 		let seqline = 1;
@@ -140,7 +148,7 @@ function ps(message){
 		console.log(utils.prettifyJson(VULNSJAR));
 	} else if(VERBOSE){
 		for(let v of VULNSJAR){
-			utils.printVulnerability(v[0], v[1]);
+			utils.printVulnerability(v[0], v[1], v[2]);
 		}
 	}
 
@@ -148,4 +156,5 @@ function ps(message){
 		let fn = utils.writeJSON(argv.o, VULNSJAR);
 		ps("findings saved to " + fn)
 	}
+	process.exit(0);
 })();
