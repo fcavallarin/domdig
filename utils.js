@@ -11,6 +11,7 @@ exports.printStatus = printStatus;
 exports.sequenceError = sequenceError;
 exports.writeJSON = writeJSON;
 exports.prettifyJson = prettifyJson;
+exports.loadPayloadsFromFile = loadPayloadsFromFile;
 exports.error = error;
 
 function addVulnerability(vuln, jar, url, verbose){
@@ -75,10 +76,26 @@ function usage(){
 		"   -o PATH           save findings to a JSON file",
 		"   -J                print findings as JSON",
 		"   -q                quiet mode",
+		"   -P PATH           load payloads from file (JSON)",
 		"   -h                this help"
 	].join("\n"));
 }
 
+
+function loadPayloadsFromFile(path){
+	var payloads, pj;
+	try{
+		pj = fs.readFileSync(path);
+	} catch(e){
+		error("unable to read payloads file");
+	}
+	try{
+		payloads = JSON.parse(pj);
+	} catch(e){
+		error("unable to decode payloads file");
+	}
+	return payloads;
+}
 
 function parseCookiesString(str){
 	try{
