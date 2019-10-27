@@ -1,7 +1,7 @@
 const htcrawl = require('htcrawl');
 const utils = require('./utils');
 const defpayloads = require('./payloads').all;
-
+const URL = require('url').URL;
 const PAYLOADMAP = {};
 const VULNSJAR = [];
 var VERBOSE = true;
@@ -116,6 +116,7 @@ function ps(message){
 }
 
 (async () => {
+	var targetUrl;
 	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q"]});
 	if(argv.q)VERBOSE = false;
 	if(VERBOSE)utils.banner();
@@ -124,19 +125,25 @@ function ps(message){
 		process.exit(0);
 	}
 
-	const targetUrl = argv._[0];
-	const options = utils.parseArgs(argv);
-
-	if(!targetUrl){
+	if(argv._.length == 0){
 		utils.usage();
 		process.exit(1);
 	}
+
+	try{
+		targetUrl = new URL(argv._[0]);
+	} catch(e){
+		utils.error(e);
+	}
+
+	const options = utils.parseArgs(argv, targetUrl);
+
 	var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads;
 	ps("starting scan");
 	let cnt = 1;
 	for(let payload of payloads){
 		ps("crawling page");
-		await crawlAndFuzz(targetUrl, payload, options);
+		await crawlAndFuzz(targetUrl.href, payload, options);
 		ps(cnt + "/" + payloads.length + " payloads checked");
 		cnt++;
 	}

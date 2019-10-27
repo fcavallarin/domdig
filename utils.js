@@ -97,28 +97,35 @@ function loadPayloadsFromFile(path){
 	return payloads;
 }
 
-function parseCookiesString(str){
+function parseCookiesString(str, domain){
+	var cookies = [];
 	try{
-		return JSON.parse(str);
-	}catch(e){}
-	var tks = str.split(/; */);
-	var ret = [];
-	for(let t of tks){
-		let kv = t.split("=");
-		ret.push({name: kv[0], value:kv.slice(1).join("=")});
+		cookies = JSON.parse(str);
+	}catch(e){
+		for(let t of str.split(/; */)){
+			let kv = t.split(/ *= */);
+			cookies.push({name: kv[0], value:kv.slice(1).join("=")});
+		}
 	}
-	return ret;
+
+	for(let c of cookies){
+		if(!c.url && !c.domain){
+			c.domain = domain;
+		}
+	}
+	return cookies;
 }
 
-function parseArgs(args){
+
+function parseArgs(args, url){
 	const options = {};
 	for(let arg in args){
 		switch(arg){
 			case "c":
 				try{
-					options.setCookies = parseCookiesString(fs.readFileSync(args[arg]));
+					options.setCookies = parseCookiesString(fs.readFileSync(args[arg]), url.hostname);
 				} catch(e){
-					options.setCookies = parseCookiesString(args[arg]);
+					options.setCookies = parseCookiesString(args[arg], url.hostname);
 				}
 				break;
 			case "A":
