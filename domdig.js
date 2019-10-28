@@ -95,9 +95,14 @@ async function crawlAndFuzz(targetUrl, payload, options){
 		}
 	}
 
-
 	try{
+		// workaround, fix it in htcrawl
+		let timeo = setTimeout(function(){
+			crawler.stop();
+		}, options.maxExecTime);
+
 		await crawler.start();
+		clearTimeout(timeo);
 	} catch(e){
 		console.log(`Error ${e}`);
 		process.exit(-4);
