@@ -2,19 +2,54 @@ const htcrawl = require('htcrawl');
 const utils = require('./utils');
 const defpayloads = require('./payloads').all;
 const URL = require('url').URL;
-const PAYLOADMAP = {};
+
+const PAYLOADMAP = [];
+var PAYLOADMAP_I = 0;
 const VULNSJAR = [];
 var VERBOSE = true;
 var PREVURL = null;
 
 function getNewPayload(payload, element){
-	const k = "" + Math.floor(Math.random()*4000000000);
-	const p = payload.replace("{0}", k);
-	PAYLOADMAP[k] = {payload:payload, element:element};
+	const p = payload.replace("{0}", PAYLOADMAP_I);
+	PAYLOADMAP[PAYLOADMAP_I] = {payload:payload, element:element};
+	PAYLOADMAP_I++;
 	return p;
 }
 
-async function crawlAndFuzz(targetUrl, payload, options){
+function getUrlMutations(url, payload){
+	var nu = new URL(url.href);
+	nu.hash = "#" + getNewPayload(payload, "hash");
+	const muts = [nu];
+	for(let p of url.searchParams.keys()){
+		nu = new URL(url.href);
+		nu.searchParams.set(p, getNewPayload(payload, "GET/" + p));
+		muts.push(nu);
+	}
+	return muts;
+}
+
+async function scanAttributes(crawler){
+	const elems = await crawler.page().$$('[xssSinkAttribute^="window.___xssSink"]');
+	for(let e of elems){
+		// must use evaluate since puppetteer cannot get non-standard attributes
+		let attr = await e.evaluate(i => i.getAttribute("xssSinkAttribute"));
+		let key = attr.match(/\(([0-9]+)\)/)[1];
+		utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, null, VERBOSE);
+	}
+}
+
+async function triggerOnpaste(crawler){
+	const elems = await crawler.page().$$('[onpaste]');
+	for(let e of elems){
+		await e.evaluate(i => {
+			var evt = document.createEvent('HTMLEvents');
+			evt.initEvent("paste", true, false);
+			i.dispatchEvent(evt);
+		});
+	}
+}
+
+async function loadCrawler(targetUrl, payload, options, trackUrlChanges){
 	var hashSet = false;
 
 	// instantiate htcrawl
@@ -26,7 +61,7 @@ async function crawlAndFuzz(targetUrl, payload, options){
 		if(crawler.page().url() != PREVURL){
 			url = PREVURL = crawler.page().url();
 		}
-		utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, url, VERBOSE);
+		utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, trackUrlChanges ? url : null, VERBOSE);
 	});
 
 	// fill all inputs with a payload
@@ -95,6 +130,12 @@ async function crawlAndFuzz(targetUrl, payload, options){
 		}
 	}
 
+	return crawler;
+}
+
+
+async function scanDom(crawler, options){
+
 	try{
 		// workaround, fix it in htcrawl
 		let timeo = setTimeout(function(){
@@ -107,11 +148,10 @@ async function crawlAndFuzz(targetUrl, payload, options){
 		console.log(`Error ${e}`);
 		process.exit(-4);
 	}
-	try{
-		await crawler.reload();
-	}catch(e){
-		utils.error(e);
-	}
+
+}
+
+async function close(crawler){
 	await crawler.page().waitFor(200);
 	crawler.browser().close();
 }
@@ -120,8 +160,9 @@ function ps(message){
 	if(VERBOSE)utils.printStatus(message);
 }
 
+
 (async () => {
-	var targetUrl;
+	var targetUrl, cnt, crawler;
 	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q"]});
 	if(argv.q)VERBOSE = false;
 	if(VERBOSE)utils.banner();
@@ -142,19 +183,45 @@ function ps(message){
 	}
 
 	const options = utils.parseArgs(argv, targetUrl);
-
+	const checks = argv.C ? argv.C.split(",") : ['dom', 'reflected', 'stored'];
 	var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads;
-	ps("starting scan");
-	let cnt = 1;
-	for(let payload of payloads){
-		ps("crawling page");
-		await crawlAndFuzz(targetUrl.href, payload, options);
-		ps(cnt + "/" + payloads.length + " payloads checked");
-		cnt++;
+	ps("Starting scan");
+
+	if(checks.indexOf("dom") != -1){
+		cnt = 1;
+		for(let payload of payloads){
+			ps("Scanning DOM");
+			crawler = await loadCrawler(targetUrl.href, payload, options, true);
+			await scanDom(crawler, options);
+			await triggerOnpaste(crawler);
+			await close(crawler);
+			ps(cnt + "/" + payloads.length + " payloads checked");
+			cnt++;
+		}
+	}
+
+	// check for reflected XSS
+	if(checks.indexOf("reflected") != -1){
+		cnt = 1;
+		for(let payload of payloads){
+			ps("Checking reflected");
+			for(let mutUrl of getUrlMutations(targetUrl, payload)){
+				crawler = await loadCrawler(mutUrl.href, payload, options);
+				if((await crawler.page().content()).match("window.___xssSink") == null){
+					ps("Parameter not reflected, skipping DOM scan");
+				} else {
+					await scanDom(crawler, options);
+				}
+				await triggerOnpaste(crawler);
+				await close(crawler);
+				ps(cnt + "/" + payloads.length + " payloads checked");
+			}
+			cnt++;
+		}
 	}
 
 	if(VERBOSE)console.log("");
-	ps("scan finished, tot vulnerabilities: " + VULNSJAR.length);
+	ps("Scan finished, tot vulnerabilities: " + VULNSJAR.length);
 
 	if(argv.J){
 		console.log(utils.prettifyJson(VULNSJAR));
@@ -166,7 +233,7 @@ function ps(message){
 
 	if(argv.o){
 		let fn = utils.writeJSON(argv.o, VULNSJAR);
-		ps("findings saved to " + fn)
+		ps("Findings saved to " + fn)
 	}
 	process.exit(0);
 })();

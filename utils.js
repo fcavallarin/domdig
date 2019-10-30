@@ -16,9 +16,14 @@ exports.error = error;
 
 function addVulnerability(vuln, jar, url, verbose){
 	p = vuln.payload.replace("window.___xssSink({0})", "alert(1)");
+	for(let e of jar){
+		if(e[0] == p && e[1] == vuln.element && (!url || e[2] == url)){
+			return;
+		}
+	}
 	jar.push([p, vuln.element, url]);
 	if(verbose){
-		printVulnerability(p, vuln.element);
+		printVulnerability(p, vuln.element, url);
 	}
 }
 
@@ -77,6 +82,7 @@ function usage(){
 		"   -J                print findings as JSON",
 		"   -q                quiet mode",
 		"   -P PATH           load payloads from file (JSON)",
+		"   -C CHECKS         comma-separated list of checks: dom,reflected (default: all)",
 		"   -h                this help"
 	].join("\n"));
 }
