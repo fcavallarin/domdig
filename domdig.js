@@ -29,12 +29,23 @@ function getUrlMutations(url, payload){
 }
 
 async function scanAttributes(crawler){
-	const elems = await crawler.page().$$('[xssSinkAttribute^="window.___xssSink"]');
-	for(let e of elems){
-		// must use evaluate since puppetteer cannot get non-standard attributes
-		let attr = await e.evaluate(i => i.getAttribute("xssSinkAttribute"));
-		let key = attr.match(/\(([0-9]+)\)/)[1];
-		utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, null, VERBOSE);
+	// use also 'srcdoc' since it can contain also esacped html: <iframe srcdoc="&lt;img src=1 onerror=alert(1)&gt;"></iframe>
+	// content can have a "timer" so maybe is not executed in time
+	const attrs = ["href", "action", "formaction", "srcdoc", "content"];
+	for(let attr of attrs){
+		const elems = await crawler.page().$$(`[${attr}]`);
+		for(let e of elems){
+			// must use evaluate since puppetteer cannot get non-standard attributes
+			let val = await e.evaluate( (i,a) => i.getAttribute(a), attr);
+			if(val.match("___xssSink") == null){
+				continue;
+			} else {
+				let key = val.match(/\(([0-9]+)\)/)[1];
+				let es = await utils.getElementSelector(e);
+				utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, null, VERBOSE, `Attribute '${attr}' of '${es}' set to payload`);
+				break;
+			}
+		}
 	}
 }
 
@@ -194,6 +205,7 @@ function ps(message){
 			crawler = await loadCrawler(targetUrl.href, payload, options, true);
 			await scanDom(crawler, options);
 			await triggerOnpaste(crawler);
+			await scanAttributes(crawler);
 			await close(crawler);
 			ps(cnt + "/" + payloads.length + " payloads checked");
 			cnt++;
@@ -212,6 +224,7 @@ function ps(message){
 				} else {
 					await scanDom(crawler, options);
 				}
+				await scanAttributes(crawler);
 				await triggerOnpaste(crawler);
 				await close(crawler);
 				ps(cnt + "/" + payloads.length + " payloads checked");
@@ -227,7 +240,7 @@ function ps(message){
 		console.log(utils.prettifyJson(VULNSJAR));
 	} else if(VERBOSE){
 		for(let v of VULNSJAR){
-			utils.printVulnerability(v[0], v[1], v[2]);
+			utils.printVulnerability(v[0], v[1], v[2], v[3]);
 		}
 	}
 

@@ -13,22 +13,25 @@ exports.writeJSON = writeJSON;
 exports.prettifyJson = prettifyJson;
 exports.loadPayloadsFromFile = loadPayloadsFromFile;
 exports.error = error;
+exports.getElementSelector = getElementSelector;
 
-function addVulnerability(vuln, jar, url, verbose){
+function addVulnerability(vuln, jar, url, verbose, message){
+	message = message || null;
 	p = vuln.payload.replace("window.___xssSink({0})", "alert(1)");
 	for(let e of jar){
 		if(e[0] == p && e[1] == vuln.element && (!url || e[2] == url)){
 			return;
 		}
 	}
-	jar.push([p, vuln.element, url]);
+	jar.push([p, vuln.element, url, message]);
 	if(verbose){
-		printVulnerability(p, vuln.element, url);
+		printVulnerability(p, vuln.element, url, message);
 	}
 }
 
-function printVulnerability(payload, element, url){
-	var msg = chalk.red('[!]') + ` DOM XSS found: ${element} → ${payload}`;
+function printVulnerability(payload, element, url, message){
+	message = message || "DOM XSS found";
+	var msg = chalk.red('[!]') + ` ${message}: ${element} → ${payload}`;
 	if(url){
 		msg += " → " + url;
 	}
@@ -251,4 +254,37 @@ function prettifyJson(obj, layer){
 			return chalk.yellow(obj);
 	}
 	return  obj;
+}
+
+
+async function getElementSelector(element){
+	return await element.evaluate( i => {
+		function gs(element){
+			if(!element || !(element instanceof HTMLElement))
+				return "";
+			var name = element.nodeName.toLowerCase();
+			var ret = [];
+			var selector = ""
+			var id = element.getAttribute("id");
+
+			if(id && id.match(/^[a-z][a-z0-9\-_:\.]*$/i)){
+				selector = "#" + id;
+			} else {
+				let p = element;
+				let cnt = 1;
+				while(p = p.previousSibling){
+					if(p instanceof HTMLElement && p.nodeName.toLowerCase() == name){
+						cnt++;
+					}
+				}
+				selector = name + (cnt > 1 ? `:nth-of-type(${cnt})` : "");
+				if(element != document.documentElement && name != "body" && element.parentNode){
+					ret.push(gs(element.parentNode));
+				}
+			}
+			ret.push(selector);
+			return ret.join(" > ");
+		}
+		return gs(i);
+	});
 }
