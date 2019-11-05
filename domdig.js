@@ -1,3 +1,4 @@
+const consts = require("./consts");
 const htcrawl = require('htcrawl');
 const utils = require('./utils');
 const defpayloads = require('./payloads').all;
@@ -42,7 +43,7 @@ async function scanAttributes(crawler){
 			} else {
 				let key = val.match(/\(([0-9]+)\)/)[1];
 				let es = await utils.getElementSelector(e);
-				utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, null, VERBOSE, `Attribute '${attr}' of '${es}' set to payload`);
+				utils.addVulnerability(VULNSJAR, consts.VULNTYPE_WARNING, PAYLOADMAP[key], null, `Attribute '${attr}' of '${es}' set to payload`, VERBOSE);
 				break;
 			}
 		}
@@ -60,50 +61,58 @@ async function triggerOnpaste(crawler){
 	}
 }
 
-async function loadCrawler(targetUrl, payload, options, trackUrlChanges){
+async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChanges, vulnmess){
 	var hashSet = false;
+	var loaded = false;
+	var crawler;
 
-	// instantiate htcrawl
-	const crawler = await htcrawl.launch(targetUrl, options);
+	do{
+		// instantiate htcrawl
+		crawler = await htcrawl.launch(targetUrl, options);
 
-	// set a sink on page scope
-	crawler.page().exposeFunction("___xssSink", function(key) {
-		var url = "";
-		if(crawler.page().url() != PREVURL){
-			url = PREVURL = crawler.page().url();
-		}
-		utils.addVulnerability(PAYLOADMAP[key], VULNSJAR, trackUrlChanges ? url : null, VERBOSE);
-	});
-
-	if(payload != null){
-		// fill all inputs with a payload
-		crawler.on("fillinput", async function(e, crawler){
-			const p = getNewPayload(payload, e.params.element);
-			try{
-				await crawler.page().$eval(e.params.element, (i, p) => i.value = p, p);
-			}catch(e){}
-			// return false to prevent element to be automatically filled with a random value
-			return false;
-		});
-
-
-		// change page hash before the triggering of the first event
-		crawler.on("triggerevent", async function(e, crawler){
-			if(!hashSet){
-				const p = getNewPayload(payload, "hash");
-				await crawler.page().evaluate(p => document.location.hash = p, p);
-				hashSet = true;
-				PREVURL = crawler.page().url();
+		// set a sink on page scope
+		crawler.page().exposeFunction("___xssSink", function(key) {
+			var url = "";
+			if(crawler.page().url() != PREVURL){
+				url = PREVURL = crawler.page().url();
 			}
+			utils.addVulnerability(VULNSJAR, vulntype, PAYLOADMAP[key], trackUrlChanges ? url : null, vulnmess, VERBOSE);
 		});
-	}
 
-	try{
-		await crawler.load();
-	} catch(e){
-		console.log(`Error ${e}`);
-		process.exit(-3);
-	}
+		if(payload != null){
+			// fill all inputs with a payload
+			crawler.on("fillinput", async function(e, crawler){
+				const p = getNewPayload(payload, e.params.element);
+				try{
+					await crawler.page().$eval(e.params.element, (i, p) => i.value = p, p);
+				}catch(e){}
+				// return false to prevent element to be automatically filled with a random value
+				return false;
+			});
+
+
+			// change page hash before the triggering of the first event
+			crawler.on("triggerevent", async function(e, crawler){
+				if(!hashSet){
+					const p = getNewPayload(payload, "hash");
+					await crawler.page().evaluate(p => document.location.hash = p, p);
+					hashSet = true;
+					PREVURL = crawler.page().url();
+				}
+			});
+		}
+
+		try{
+			await crawler.load();
+			loaded = true;
+		} catch(e){
+			utils.printError(`${e}`);
+			if(VERBOSE) utils.printInfo("Retrying . . .")
+			try{
+				await crawler.browser().close();
+			} catch(e1){}
+		}
+	} while(!loaded);
 
 	PREVURL = crawler.page().url();
 
@@ -169,6 +178,21 @@ async function close(crawler){
 	crawler.browser().close();
 }
 
+async function scanStored(url, options){
+	ps("Scanning DOM for stored XSS");
+	const crawler = await loadCrawler(consts.VULNTYPE_STORED, url, null, options, true);
+	// disable post request since they can overwrite injected payloads
+	const cancelPostReq = function(e){return e.params.request.method == "GET"};
+
+	crawler.on("xhr", cancelPostReq);
+	crawler.on("fetch", cancelPostReq);
+	await scanDom(crawler, options);
+	await triggerOnpaste(crawler);
+	await scanAttributes(crawler);
+	await close(crawler);
+	ps("Stored XSS scan finshed");
+}
+
 function ps(message){
 	if(VERBOSE)utils.printStatus(message);
 }
@@ -196,32 +220,41 @@ function ps(message){
 	}
 
 	const options = utils.parseArgs(argv, targetUrl);
-	const checks = argv.C ? argv.C.split(",") : ['dom', 'reflected', 'stored'];
+	options.crawlmode = "random"
+	const checks = argv.C ? argv.C.split(",") : [consts.CHECKTYPE_DOM, consts.CHECKTYPE_REFLECTED, consts.CHECKTYPE_STORED];
 	var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads;
+
+	if(checks.length == 1 && checks[0] == consts.CHECKTYPE_STORED){
+		if(VERBOSE)utils.printWarning("Cannot check for stored without dom or reflected scan. Forcing dom scan.");
+		checks.push("dom");
+	}
 	ps("Starting scan");
 
-	if(checks.indexOf("dom") != -1){
+	if(checks.indexOf(consts.CHECKTYPE_DOM) != -1){
 		cnt = 1;
 		for(let payload of payloads){
 			ps("Scanning DOM");
-			crawler = await loadCrawler(targetUrl.href, payload, options, true);
+			crawler = await loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, options, true);
 			await scanDom(crawler, options);
 			await triggerOnpaste(crawler);
 			await scanAttributes(crawler);
 			await close(crawler);
+			if(checks.indexOf(consts.CHECKTYPE_STORED) != -1){
+				await scanStored(targetUrl.href, options);
+			}
 			ps(cnt + "/" + payloads.length + " payloads checked");
 			cnt++;
 		}
 	}
 
 	// check for reflected XSS
-	if(checks.indexOf("reflected") != -1){
+	if(checks.indexOf(consts.CHECKTYPE_REFLECTED) != -1){
 		cnt = 1;
 		for(let payload of payloads){
 			ps("Checking reflected");
 			for(let mutUrl of getUrlMutations(targetUrl, payload)){
 				let totv = VULNSJAR.length;
-				crawler = await loadCrawler(mutUrl.href, payload, options);
+				crawler = await loadCrawler(consts.VULNTYPE_REFLECTED, mutUrl.href, payload, options);
 				if(totv != VULNSJAR.length) {
 					//ps("Vulnerability found, skipping DOM scan");
 				} else {
@@ -230,21 +263,13 @@ function ps(message){
 				await triggerOnpaste(crawler);
 				await scanAttributes(crawler);
 				await close(crawler);
+				if(checks.indexOf(consts.CHECKTYPE_STORED) != -1){
+					await scanStored(targetUrl.href, options);
+				}
 				ps(cnt + "/" + payloads.length + " payloads checked");
 			}
 			cnt++;
 		}
-	}
-
-	// check for stored XSS
-	if(checks.indexOf("stored") != -1){
-		ps("Scanning DOM for stored XSS");
-		crawler = await loadCrawler(targetUrl.href, null, options);
-		await scanDom(crawler, options);
-		await triggerOnpaste(crawler);
-		await scanAttributes(crawler);
-		await close(crawler);
-		ps("Store XSS scan finshed");
 	}
 
 	if(VERBOSE)console.log("");
@@ -254,7 +279,7 @@ function ps(message){
 		console.log(utils.prettifyJson(VULNSJAR));
 	} else if(VERBOSE){
 		for(let v of VULNSJAR){
-			utils.printVulnerability(v[0], v[1], v[2], v[3]);
+			utils.printVulnerability(v);
 		}
 	}
 

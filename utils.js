@@ -1,3 +1,4 @@
+const consts = require("./consts");
 const fs = require('fs');
 const chalk = require('chalk');
 
@@ -8,32 +9,56 @@ exports.error = error;
 exports.addVulnerability = addVulnerability;
 exports.printVulnerability = printVulnerability;
 exports.printStatus = printStatus;
+exports.printInfo = printInfo;
+exports.printWarning = printWarning;
+exports.printError = printError;
 exports.sequenceError = sequenceError;
 exports.writeJSON = writeJSON;
 exports.prettifyJson = prettifyJson;
 exports.loadPayloadsFromFile = loadPayloadsFromFile;
 exports.error = error;
 exports.getElementSelector = getElementSelector;
+exports.Vulnerability = Vulnerability;
 
-function addVulnerability(vuln, jar, url, verbose, message){
-	message = message || null;
-	p = vuln.payload.replace("window.___xssSink({0})", "alert(1)");
-	for(let e of jar){
-		if(e[0] == p && e[1] == vuln.element && (!url || e[2] == url)){
-			return;
-		}
-	}
-	jar.push([p, vuln.element, url, message]);
-	if(verbose){
-		printVulnerability(p, vuln.element, url, message);
+function Vulnerability(type, payload, element, url, message){
+	this.type = type;
+	this.payload = payload;
+	this.element = element || "N/A";
+	this.url = url || "";
+	if(message){
+		this.message = message;
+	} else switch (type){
+		case consts.VULNTYPE_DOM:
+			this.message = "DOM XSS found";
+			break;
+		case consts.VULNTYPE_REFLECTED:
+			this.message = "Reflected DOM XSS found";
+			break;
+		case consts.VULNTYPE_STORED:
+			this.message = "Stored XSS found";
+			break;
 	}
 }
 
-function printVulnerability(payload, element, url, message){
-	message = message || "DOM XSS found";
-	var msg = chalk.red('[!]') + ` ${message}: ${element} → ${payload}`;
-	if(url){
-		msg += " → " + url;
+function addVulnerability(jar, type, vuln, url, message, verbose){
+	message = message || null;
+	p = vuln.payload.replace("window.___xssSink({0})", "alert(1)");
+	for(let e of jar){
+		if(e.payload == p && e.element == vuln.element && e.message == message && (!url || e.url == url)){
+			return;
+		}
+	}
+	const v = new Vulnerability(type, p, vuln.element, url, message);
+	jar.push(v);
+	if(verbose){
+		printVulnerability(v);
+	}
+}
+
+function printVulnerability(v){
+	var msg = chalk.red('[!]') + ` ${v.message}: ${v.element} → ${v.payload}`;
+	if(v.url){
+		msg += " → " + v.url;
 	}
 	console.log(msg);
 }
@@ -41,6 +66,17 @@ function printVulnerability(payload, element, url, message){
 
 function printStatus(mess){
 	console.log(chalk.green("[*] ") + mess);
+}
+function printInfo(mess){
+	console.log(chalk.blue("[*] ") + mess);
+}
+
+function printWarning(mess){
+	console.log(chalk.yellow("[!] ") + mess);
+}
+
+function printError(mess){
+	console.log(chalk.red("[!] ") + mess);
 }
 
 function error(message){
@@ -85,7 +121,7 @@ function usage(){
 		"   -J                print findings as JSON",
 		"   -q                quiet mode",
 		"   -P PATH           load payloads from file (JSON)",
-		"   -C CHECKS         comma-separated list of checks: dom,reflected (default: all)",
+		"   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
 		"   -h                this help"
 	].join("\n"));
 }
