@@ -108,12 +108,13 @@ function loadPayloadsFromFile(path){
 
 function parseCookiesString(str, domain){
 	var cookies = [];
+	if(typeof str != 'string') str = "" + str;
 	try{
 		cookies = JSON.parse(str);
 	}catch(e){
 		for(let t of str.split(/; */)){
 			let kv = t.split(/ *= */);
-			cookies.push({name: kv[0], value:kv.slice(1).join("=")});
+			cookies.push({name: kv[0], value:kv.slice(1).join("=").trim()});
 		}
 	}
 
