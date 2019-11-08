@@ -6,3 +6,5 @@ exports.VULNTYPE_REFLECTED = "reflected";
 exports.VULNTYPE_STORED = "stored";
 exports.VULNTYPE_WARNING = "warning";
 
+exports.DEF_MAXEXECTIME = 300000;
+

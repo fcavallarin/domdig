@@ -221,6 +221,7 @@ function ps(message){
 
 	const options = utils.parseArgs(argv, targetUrl);
 	options.crawlmode = "random"
+	if(!options.maxExecTime) options.maxExecTime = consts.DEF_MAXEXECTIME;
 	const checks = argv.C ? argv.C.split(",") : [consts.CHECKTYPE_DOM, consts.CHECKTYPE_REFLECTED, consts.CHECKTYPE_STORED];
 	var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads;
 
