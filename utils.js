@@ -122,6 +122,7 @@ function usage(){
 		"   -q                quiet mode",
 		"   -P PATH           load payloads from file (JSON)",
 		"   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
+		"   -X REGEX          regular expression to eXclude urls (ex -X'.*logout.*' -X'.*signout.*')",
 		"   -h                this help"
 	].join("\n"));
 }
@@ -218,6 +219,9 @@ function parseArgs(args, url){
 						process.exit(1);
 					}
 				}
+				break;
+			case "X":
+				options.excludedUrls = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
 				break;
 		}
 	}
