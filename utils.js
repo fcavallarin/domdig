@@ -36,15 +36,17 @@ function Vulnerability(type, payload, element, url, message){
 			break;
 		case consts.VULNTYPE_STORED:
 			this.message = "Stored XSS found";
+		case consts.VULNTYPE_TEMPLATEINJ:
+			this.message = "Template injection found";
 			break;
 	}
 }
 
 function addVulnerability(jar, type, vuln, url, message, verbose){
 	message = message || null;
-	p = vuln.payload.replace("window.___xssSink({0})", "alert(1)");
+	p = vuln.payload.replace("window." + consts.SINKNAME + "({0})", "alert(1)");
 	for(let e of jar){
-		if(e.payload == p && e.element == vuln.element && e.message == message && (!url || e.url == url)){
+		if(e.payload == p && e.element == vuln.element && e.type == type && (!message || e.message == message) && (!url || e.url == url)){
 			return;
 		}
 	}
@@ -123,6 +125,7 @@ function usage(){
 		"   -P PATH           load payloads from file (JSON)",
 		"   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
 		"   -X REGEX          regular expression to eXclude urls (ex -X'.*logout.*' -X'.*signout.*')",
+		"   -T                disabe template injection check",
 		"   -h                this help"
 	].join("\n"));
 }
