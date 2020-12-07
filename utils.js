@@ -126,6 +126,7 @@ function usage(){
 		"   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
 		"   -X REGEX          regular expression to eXclude urls (ex -X'.*logout.*' -X'.*signout.*')",
 		"   -T                disabe template injection check",
+		"   -g KEY/VALUE      set browser's Local/Session storaGe (ex -g L:foo=bar -g S:bar=foo)",
 		"   -h                this help"
 	].join("\n"));
 }
@@ -207,10 +208,25 @@ function parseArgs(args, url){
 				options.extraHeaders = {};
 				for(let h of hdrs){
 					let t = h.split("=");
-					options.extraHeaders[t[0]] = t[1];
+					options.extraHeaders[t[0]] = t.slice(1).join("=");
 				}
 				break;
-
+			case "g":
+				let ls = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
+				options.localStorage = [];
+				for(let l of ls){
+					let t = l.split("=");
+					let val = t.slice(1).join("=");
+					t = t[0].split(":");
+					let type = t[0];
+					let key = t.slice(1).join(":");
+					if(key == "" || ['S', 'L'].indexOf(type) == -1 || val == ""){
+						console.error(chalk.red("Error parsing -g option"));
+						process.exit(1);
+					}
+					options.localStorage.push({type:type, key:key, val:val});
+				}
+				break;
 			case "s":
 				try{
 					options.initSequence = JSON.parse(fs.readFileSync(args[arg]));

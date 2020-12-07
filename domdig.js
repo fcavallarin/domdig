@@ -73,7 +73,14 @@ async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChange
 	do{
 		// instantiate htcrawl
 		crawler = await htcrawl.launch(targetUrl, options);
-
+		if(options.localStorage){
+			await crawler.page().evaluateOnNewDocument( (localStorage) => {
+				for(let l of localStorage){
+					let fn = l.type == "L" ? window.localStorage : window.sessionStorage;
+					fn.setItem(l.key, l.val);
+				}
+			}, options.localStorage);
+		}
 		// set a sink on page scope
 		if(payload == null || payload.indexOf(consts.SINKNAME) > -1){
 			checkTempleteInj = false;
