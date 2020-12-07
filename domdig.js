@@ -153,7 +153,7 @@ async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChange
 		for(let seq of options.initSequence){
 			switch(seq[0]){
 				case "sleep":
-					await crawler.page().waitFor(seq[1]);
+					await sleep(seq[1]);
 					break;
 				case "write":
 					try{
@@ -206,8 +206,8 @@ async function scanDom(crawler, options){
 }
 
 async function close(crawler){
-	await crawler.page().waitFor(200);
-	crawler.browser().close();
+	await sleep(200);
+	await crawler.browser().close();
 }
 
 async function scanStored(url, options){
@@ -229,6 +229,13 @@ async function scanStored(url, options){
 function ps(message){
 	if(VERBOSE)utils.printStatus(message);
 }
+
+function sleep(n){
+	return new Promise(resolve => {
+		setTimeout(resolve, n);
+	});
+};
+
 
 
 (async () => {
