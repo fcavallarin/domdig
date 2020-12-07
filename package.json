@@ -4,12 +4,9 @@
   "description": "DOM XSS scanner for Single Page Applications",
   "main": "domdig.js",
   "dependencies": {
-    "htcrawl": "fcavallarin/htcrawl#master",
+    "htcrawl": "^1.0.4",
     "minimist": "^1.2.0",
     "chalk": "^2.4.2"
-  },
-  "devDependencies": {
-    "htcrawl": "fcavallarin/htcrawl#developer"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
