@@ -1,6 +1,7 @@
 const consts = require("./consts");
 const fs = require('fs');
 const chalk = require('chalk');
+const Database = require('./database').Database;
 
 exports.usage = usage;
 exports.banner = banner;
@@ -8,17 +9,18 @@ exports.parseArgs = parseArgs;
 exports.error = error;
 exports.addVulnerability = addVulnerability;
 exports.printVulnerability = printVulnerability;
+exports.printRequest = printRequest;
 exports.printStatus = printStatus;
 exports.printInfo = printInfo;
 exports.printWarning = printWarning;
 exports.printError = printError;
-exports.sequenceError = sequenceError;
 exports.writeJSON = writeJSON;
 exports.prettifyJson = prettifyJson;
 exports.loadPayloadsFromFile = loadPayloadsFromFile;
 exports.error = error;
 exports.getElementSelector = getElementSelector;
 exports.Vulnerability = Vulnerability;
+
 
 function Vulnerability(type, payload, element, url, message){
 	this.type = type;
@@ -42,7 +44,7 @@ function Vulnerability(type, payload, element, url, message){
 	}
 }
 
-function addVulnerability(jar, type, vuln, url, message, verbose){
+function addVulnerability(jar, db, type, vuln, url, message, verbose){
 	message = message || null;
 	p = vuln.payload.replace("window." + consts.SINKNAME + "({0})", "alert(1)");
 	for(let e of jar){
@@ -55,6 +57,10 @@ function addVulnerability(jar, type, vuln, url, message, verbose){
 	if(verbose){
 		printVulnerability(v);
 	}
+	if(db){
+		db.addVulnerability(v);
+	}
+
 }
 
 function printVulnerability(v){
@@ -65,6 +71,23 @@ function printVulnerability(v){
 	console.log(msg);
 }
 
+function printRequest(req){
+	var m = "[R] ";
+	if(req.trigger && req.trigger.element){
+		m += '$(' + chalk.green(req.trigger.element) + ').' + chalk.greenBright(`${req.trigger.event}()`) + " → ";
+	}
+	m += chalk.cyan(req.method) + " " + req.url;
+	if(req.data){
+		m += "\n"
+		try{
+			m += prettifyJson(JSON.parse(req.data));
+		} catch(e){
+			m += req.data;
+		}
+		m += "\n" + "-".repeat(96);
+	}
+	console.log(m);	
+}
 
 function printStatus(mess){
 	console.log(chalk.green("[*] ") + mess);
@@ -115,7 +138,7 @@ function usage(){
 		"   -p PROXY          proxy string protocol:host:port",
 		"                     protocol can be 'http' or 'socks5'",
 		"   -l                do not run chrome in headless mode",
-		"   -E HEADER         set extra http headers (ex -E foo=bar -E bar=foo)",
+		"   -E HEADER         set extra http headers (ex -E foo=bar -E bar=foo or JSON)",
 		"   -s SEQUENCE|PATH  set initial sequence (JSON)",
 		"                     If PATH is a valid readable file,",
 		"                     SEQUENCE is read from that file",
@@ -126,7 +149,10 @@ function usage(){
 		"   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
 		"   -X REGEX          regular expression to eXclude urls (ex -X'.*logout.*' -X'.*signout.*')",
 		"   -T                disabe template injection check",
-		"   -g KEY/VALUE      set browser's Local/Session storaGe (ex -g L:foo=bar -g S:bar=foo)",
+		"   -g KEY/VALUE      set browser's Local/Session storaGe (ex -g L:foo=bar -g S:bar=foo or JSON)",
+		"   -d FILE_NAME      save all the results to a SQLite3 database",
+		"   -r                print all XHR/fetch request triggered while scanning",
+		"   -D                dry-run, do not use any payload, just crawl the page",
 		"   -h                this help"
 	].join("\n"));
 }
@@ -204,27 +230,45 @@ function parseArgs(args, url){
 				options.headlessChrome = !args[arg];
 				break;
 			case "E":
-				let hdrs = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
-				options.extraHeaders = {};
-				for(let h of hdrs){
-					let t = h.split("=");
-					options.extraHeaders[t[0]] = t.slice(1).join("=");
+				try {
+					options.extraHeaders = JSON.parse(args[arg]);
+				} catch(e){
+					let hdrs = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
+					options.extraHeaders = {};
+					for(let h of hdrs){
+						let t = h.split("=");
+						options.extraHeaders[t[0]] = t.slice(1).join("=");
+					}
 				}
 				break;
 			case "g":
-				let ls = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
-				options.localStorage = [];
-				for(let l of ls){
-					let t = l.split("=");
-					let val = t.slice(1).join("=");
-					t = t[0].split(":");
-					let type = t[0];
-					let key = t.slice(1).join(":");
-					if(key == "" || ['S', 'L'].indexOf(type) == -1 || val == ""){
-						console.error(chalk.red("Error parsing -g option"));
-						process.exit(1);
+				try {
+					options.localStorage = [];
+					let ls = JSON.parse(args[arg]);
+					for(let s in ls){
+						let t = s.split(":");
+						if(t.length == 1){
+							options.localStorage.push({type: "L", key: t[0], val: ls[s]});
+						} else {
+							options.localStorage.push({type: t[0] == "S" ? "S" : "L", key: t[1], val: ls[s]});
+						}
 					}
-					options.localStorage.push({type:type, key:key, val:val});
+
+				} catch(e){
+					let ls = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
+					options.localStorage = [];
+					for(let l of ls){
+						let t = l.split("=");
+						let val = t.slice(1).join("=");
+						t = t[0].split(":");
+						let type = t[0];
+						let key = t.slice(1).join(":");
+						if(key == "" || ['S', 'L'].indexOf(type) == -1 || val == ""){
+							console.error(chalk.red("Error parsing -g option"));
+							process.exit(1);
+						}
+						options.localStorage.push({type:type, key:key, val:val});
+					}
 				}
 				break;
 			case "s":
@@ -242,20 +286,20 @@ function parseArgs(args, url){
 			case "X":
 				options.excludedUrls = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
 				break;
+			case "d":
+				options.databaseFileName = args[arg];
+				break;
+			case "r":
+				options.printRequests = args[arg];
+				break;
+			case "D":
+				options.dryRun = args[arg];
+				break;
+
 		}
 	}
 	return options;
 }
-
-
-function sequenceError(message, seqline){
-	if(seqline){
-		message = "action " + seqline + ": " + message;
-	}
-	console.error(chalk.red(message));
-	process.exit(2);
-}
-
 
 function genFilename(fname){
 	if(!fs.existsSync(fname)) return fname;

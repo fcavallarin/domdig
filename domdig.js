@@ -1,16 +1,18 @@
-
-
+const fs = require('fs');
+const chalk = require('chalk');
 const consts = require("./consts");
 const htcrawl = require('htcrawl');
 const utils = require('./utils');
 const defpayloads = require('./payloads');
 const URL = require('url').URL;
+const Database = require('./database').Database;
 
 const PAYLOADMAP = [];
 var PAYLOADMAP_I = 0;
 const VULNSJAR = [];
 var VERBOSE = true;
 var PREVURL = null;
+var DATABASE = null;
 
 function getNewPayload(payload, element){
 	const p = payload.replace("{0}", PAYLOADMAP_I);
@@ -45,7 +47,7 @@ async function scanAttributes(crawler){
 			} else {
 				let key = val.match(/\(([0-9]+)\)/)[1];
 				let es = await utils.getElementSelector(e);
-				utils.addVulnerability(VULNSJAR, consts.VULNTYPE_WARNING, PAYLOADMAP[key], null, `Attribute '${attr}' of '${es}' set to payload`, VERBOSE);
+				utils.addVulnerability(VULNSJAR, DATABASE, consts.VULNTYPE_WARNING, PAYLOADMAP[key], null, `Attribute '${attr}' of '${es}' set to payload`, VERBOSE);
 				break;
 			}
 		}
@@ -61,6 +63,17 @@ async function triggerOnpaste(crawler){
 			i.dispatchEvent(evt);
 		});
 	}
+}
+
+function sequenceError(message, seqline){
+	if(seqline){
+		message = "action " + seqline + ": " + message;
+	}
+	if(DATABASE){
+		DATABASE.updateStatus(message, true);
+	}
+	console.error(chalk.red(message));
+	process.exit(2);
 }
 
 async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChanges){
@@ -81,50 +94,62 @@ async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChange
 				}
 			}, options.localStorage);
 		}
-		// set a sink on page scope
-		if(payload == null || payload.indexOf(consts.SINKNAME) > -1){
-			checkTempleteInj = false;
-			crawler.page().exposeFunction(consts.SINKNAME, function(key) {
-				var url = "";
-				if(crawler.page().url() != PREVURL){
-					url = PREVURL = crawler.page().url();
-				}
-				utils.addVulnerability(VULNSJAR, vulntype, PAYLOADMAP[key], trackUrlChanges ? url : null, null, VERBOSE);
-			});
-		}
 
-		if(payload != null){
-			// fill all inputs with a payload
-			crawler.on("fillinput", async function(e, crawler){
-				const p = getNewPayload(payload, e.params.element);
-				try{
-					await crawler.page().$eval(e.params.element, (i, p) => i.value = p, p);
-				}catch(e){}
-				// return false to prevent element to be automatically filled with a random value
-				return false;
-			});
+		crawler.on("xhr", async function(e, crawler){
+			if(options.printRequests){
+				utils.printRequest(e.params.request)
+			}
+			if(DATABASE){
+				DATABASE.addRequest(e.params.request);
+			}
+			return true;
+		});
 
+		if(!options.dryRun){
+			// set a sink on page scope
+			if(payload == null || payload.indexOf(consts.SINKNAME) > -1){
+				checkTempleteInj = false;
+				crawler.page().exposeFunction(consts.SINKNAME, function(key) {
+					var url = "";
+					if(crawler.page().url() != PREVURL){
+						url = PREVURL = crawler.page().url();
+					}
+					utils.addVulnerability(VULNSJAR, DATABASE, vulntype, PAYLOADMAP[key], trackUrlChanges ? url : null, null, VERBOSE);
+				});
+			}
 
-			// change page hash before the triggering of the first event
-			crawler.on("triggerevent", async function(e, crawler){
-				if(!hashSet){
-					const p = getNewPayload(payload, "hash");
-					await crawler.page().evaluate(p => document.location.hash = p, p);
-					hashSet = true;
-					PREVURL = crawler.page().url();
-				}
-			});
+			if(payload != null){
+				// fill all inputs with a payload
+				crawler.on("fillinput", async function(e, crawler){
+					const p = getNewPayload(payload, e.params.element);
+					try{
+						await crawler.page().$eval(e.params.element, (i, p) => i.value = p, p);
+					}catch(e){}
+					// return false to prevent element to be automatically filled with a random value
+					return false;
+				});
 
-			if(checkTempleteInj){
-				crawler.on("eventtriggered", async function(e, crawler){
-					var cont = await crawler.page().content();
-					var re = /\[object [A-Za-z]+\]([0-9]+)\[object [A-Za-z]+\]/gm;
-					var m;
-					while(m=re.exec(cont)){
-						var key = m[1];
-						utils.addVulnerability(VULNSJAR, consts.VULNTYPE_TEMPLATEINJ, PAYLOADMAP[key], null, null, VERBOSE);
+				// change page hash before the triggering of the first event
+				crawler.on("triggerevent", async function(e, crawler){
+					if(!hashSet){
+						const p = getNewPayload(payload, "hash");
+						await crawler.page().evaluate(p => document.location.hash = p, p);
+						hashSet = true;
+						PREVURL = crawler.page().url();
 					}
 				});
+
+				if(checkTempleteInj){
+					crawler.on("eventtriggered", async function(e, crawler){
+						var cont = await crawler.page().content();
+						var re = /\[object [A-Za-z]+\]([0-9]+)\[object [A-Za-z]+\]/gm;
+						var m;
+						while(m=re.exec(cont)){
+							var key = m[1];
+							utils.addVulnerability(VULNSJAR, DATABASE, consts.VULNTYPE_TEMPLATEINJ, PAYLOADMAP[key], null, null, VERBOSE);
+						}
+					});
+				}
 			}
 		}
 
@@ -149,39 +174,45 @@ async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChange
 	PREVURL = crawler.page().url();
 
 	if(options.initSequence){
+		ps(`Start initial sequence`);
 		let seqline = 1;
 		for(let seq of options.initSequence){
 			switch(seq[0]){
 				case "sleep":
-					await sleep(seq[1]);
+					ps(`Sleep for ${seq[1]} seconds`);
+					await sleep(seq[1] * 1000);
 					break;
 				case "write":
+					ps(`Filling input ${seq[1]} with "${seq[2]}"`);
 					try{
 						await crawler.page().type(seq[1], seq[2]);
 					} catch(e){
-						utils.sequenceError("element not found", seqline);
+						sequenceError("element not found", seqline);
 					}
 					break;
 				case "click":
+					ps(`Click ${seq[1]}`);
 					try{
 						await crawler.page().click(seq[1]);
 					} catch(e){
-						utils.sequenceError("element not found", seqline);
+						sequenceError("element not found", seqline);
 					}
 					await crawler.waitForRequestsCompletion();
 					break;
 				case "clickToNavigate":
+					ps(`Click to navigate ${seq[1]} ${seq[2]}`);
 					try{
 						await crawler.clickToNavigate(seq[1], seq[2]);
 					} catch(err){
-						utils.sequenceError(err, seqline);
+						sequenceError(err, seqline);
 					}
 					break;
 				default:
-					utils.sequenceError("action not found", seqline);
+					sequenceError("action not found", seqline);
 			}
 			seqline++;
 		}
+		ps(`Initial sequence finished`);
 	}
 
 	return crawler;
@@ -226,8 +257,11 @@ async function scanStored(url, options){
 	ps("Stored XSS scan finshed");
 }
 
-function ps(message){
+function ps(message, completed){
 	if(VERBOSE)utils.printStatus(message);
+	if(DATABASE){
+		DATABASE.updateStatus(message, !!completed);
+	}
 }
 
 function sleep(n){
@@ -236,18 +270,15 @@ function sleep(n){
 	});
 };
 
-
-
 (async () => {
 	var targetUrl, cnt, crawler;
-	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T"]});
+	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r"]});
 	if(argv.q)VERBOSE = false;
 	if(VERBOSE)utils.banner();
 	if('h' in argv){
 		utils.usage();
 		process.exit(0);
 	}
-
 	if(argv._.length == 0){
 		utils.usage();
 		process.exit(1);
@@ -258,11 +289,18 @@ function sleep(n){
 	} catch(e){
 		utils.error(e);
 	}
-
 	const options = utils.parseArgs(argv, targetUrl);
-	options.crawlmode = "random"
+	options.crawlmode = "random";
+	if(options.databaseFileName){
+		if(fs.existsSync(options.databaseFileName)){
+			utils.error(`File ${options.databaseFileName} already exists`);
+			process.exit(1);
+		}
+		DATABASE = new Database(options.databaseFileName);
+		DATABASE.init();
+	}
 	if(!options.maxExecTime) options.maxExecTime = consts.DEF_MAXEXECTIME;
-	const checks = argv.C ? argv.C.split(",") : [consts.CHECKTYPE_DOM, consts.CHECKTYPE_REFLECTED, consts.CHECKTYPE_STORED];
+	var checks = argv.C ? argv.C.split(",") : [consts.CHECKTYPE_DOM, consts.CHECKTYPE_REFLECTED, consts.CHECKTYPE_STORED];
 	var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads.xss;
 	if(!argv.T){
 		payloads.push(...defpayloads.templateinj);
@@ -273,11 +311,16 @@ function sleep(n){
 		checks.push("dom");
 	}
 	ps("Starting scan");
+	if(options.dryRun){
+		payloads = ["dontcare"];
+		checks = consts.CHECKTYPE_DOM;
+		if(VERBOSE)utils.printInfo("Running in dry-run mode, no payloads will be used");
+	}
 
 	if(checks.indexOf(consts.CHECKTYPE_DOM) != -1){
 		cnt = 1;
 		for(let payload of payloads){
-			ps("Scanning DOM");
+			ps("Scanning DOM with " + cnt + " of " + payloads.length + " payloads");
 			crawler = await loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, options, true);
 			if(crawler == null)continue;
 			await scanDom(crawler, options);
@@ -296,7 +339,7 @@ function sleep(n){
 	if(checks.indexOf(consts.CHECKTYPE_REFLECTED) != -1){
 		cnt = 1;
 		for(let payload of payloads){
-			ps("Checking reflected");
+			ps("Checking reflected with " + cnt + " of " + payloads.length + " payloads");
 			for(let mutUrl of getUrlMutations(targetUrl, payload)){
 				let totv = VULNSJAR.length;
 				crawler = await loadCrawler(consts.VULNTYPE_REFLECTED, mutUrl.href, payload, options);
@@ -319,7 +362,7 @@ function sleep(n){
 	}
 
 	if(VERBOSE)console.log("");
-	ps("Scan finished, tot vulnerabilities: " + VULNSJAR.length);
+	ps("Scan finished, tot vulnerabilities: " + VULNSJAR.length, true);
 
 	if(argv.J){
 		console.log(utils.prettifyJson(VULNSJAR));
