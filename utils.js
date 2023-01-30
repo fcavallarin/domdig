@@ -153,6 +153,7 @@ function usage(){
 		"   -d FILE_NAME      save all the results to a SQLite3 database",
 		"   -r                print all XHR/fetch request triggered while scanning",
 		"   -D                dry-run, do not use any payload, just crawl the page",
+		"   -b                do not restart the browser every new payload",
 		"   -h                this help"
 	].join("\n"));
 }
@@ -294,6 +295,9 @@ function parseArgs(args, url){
 				break;
 			case "D":
 				options.dryRun = args[arg];
+				break;
+			case "b":
+				options.singleBrowser = args[arg];
 				break;
 
 		}

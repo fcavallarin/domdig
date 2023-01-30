@@ -13,6 +13,8 @@ const VULNSJAR = [];
 var VERBOSE = true;
 var PREVURL = null;
 var DATABASE = null;
+var CRAWLER = null;
+var USE_SINGLE_BROWSER = false;
 
 function getNewPayload(payload, element){
 	const p = payload.replace("{0}", PAYLOADMAP_I);
@@ -76,16 +78,26 @@ function sequenceError(message, seqline){
 	process.exit(2);
 }
 
+
 async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChanges){
 	var hashSet = false;
 	var loaded = false;
 	var crawler;
 	var checkTempleteInj = true;
 	var retries = 4;
+	var firstRun = true;
 
 	do{
-		// instantiate htcrawl
-		crawler = await htcrawl.launch(targetUrl, options);
+		if(!CRAWLER || !USE_SINGLE_BROWSER){
+			// instantiate htcrawl
+			crawler = await htcrawl.launch(targetUrl, options);
+			CRAWLER = crawler;
+		} else {
+			crawler = CRAWLER;
+			firstRun = false;
+			// await crawler.navigate(targetUrl);
+			await crawler.newPage(targetUrl);
+		}
 		if(options.localStorage){
 			await crawler.page().evaluateOnNewDocument( (localStorage) => {
 				for(let l of localStorage){
@@ -173,7 +185,7 @@ async function loadCrawler(vulntype, targetUrl, payload, options, trackUrlChange
 
 	PREVURL = crawler.page().url();
 
-	if(options.initSequence){
+	if(options.initSequence  && firstRun){
 		ps(`Start initial sequence`);
 		let seqline = 1;
 		for(let seq of options.initSequence){
@@ -226,7 +238,6 @@ async function scanDom(crawler, options){
 		let timeo = setTimeout(function(){
 			crawler.stop();
 		}, options.maxExecTime);
-
 		await crawler.start();
 		clearTimeout(timeo);
 	} catch(e){
@@ -238,7 +249,11 @@ async function scanDom(crawler, options){
 
 async function close(crawler){
 	await sleep(200);
-	await crawler.browser().close();
+	if(USE_SINGLE_BROWSER){
+		await crawler.page().close();
+	}else {
+		await crawler.browser().close();
+	}
 }
 
 async function scanStored(url, options){
@@ -272,7 +287,7 @@ function sleep(n){
 
 (async () => {
 	var targetUrl, cnt, crawler;
-	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r"]});
+	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "b"]});
 	if(argv.q)VERBOSE = false;
 	if(VERBOSE)utils.banner();
 	if('h' in argv){
@@ -309,6 +324,9 @@ function sleep(n){
 	if(checks.length == 1 && checks[0] == consts.CHECKTYPE_STORED){
 		if(VERBOSE)utils.printWarning("Cannot check for stored without dom or reflected scan. Forcing dom scan.");
 		checks.push("dom");
+	}
+	if(options.singleBrowser){
+		USE_SINGLE_BROWSER = true;
 	}
 	ps("Starting scan");
 	if(options.dryRun){
@@ -355,7 +373,7 @@ function sleep(n){
 				if(checks.indexOf(consts.CHECKTYPE_STORED) != -1){
 					await scanStored(targetUrl.href, options);
 				}
-				ps(cnt + "/" + payloads.length + " payloads checked");
+				ps(cnt + "/" + payloads.length + " payloads checked (URL mutation: " + mutUrl + ")");
 			}
 			cnt++;
 		}
