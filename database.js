@@ -29,6 +29,7 @@ const qryCreateTableVulnerability = `
 		element TEXT,
 		payload TEXT,
 		url TEXT,
+		confirmed BOOLEAN,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	)
 `;
@@ -44,6 +45,13 @@ exports.Database = class {
 
 	run(qry, pars){
 		const db = this.connect();
+		if(pars){
+			for(let i = 0; i < pars.length; i++){
+				if(typeof pars[i] == 'boolean'){
+					pars[i] = pars[i] ? 1 : 0;
+				}
+			}
+		}
 		const ret = db.prepare(qry).run(pars);
 		db.close();
 		return ret;
@@ -58,7 +66,7 @@ exports.Database = class {
 	}
 
 	updateStatus(status, completed){
-		this.run("INSERT INTO scan_info (status, completed) values (?, ?)", [status, completed ? 1 : 0]);
+		this.run("INSERT INTO scan_info (status, completed) values (?, ?)", [status, completed]);
 	}
 
 	addRequest(request){
@@ -67,7 +75,12 @@ exports.Database = class {
 	}
 
 	addVulnerability(vulnerability){
-		const qry = "INSERT INTO vulnerability (type, description, element, payload, url) values (?, ?, ?, ?, ?)";
-		this.run(qry, [vulnerability.type, vulnerability.message, vulnerability.element, vulnerability.payload, vulnerability.url]);
+		const qry = "INSERT INTO vulnerability (type, description, element, payload, url, confirmed) values (?, ?, ?, ?, ?, ?)";
+		this.run(qry, [vulnerability.type, vulnerability.message, vulnerability.element, vulnerability.payload, vulnerability.url, vulnerability.confirmed]);
+	}
+
+	updateVulnerability(vulnerability){
+		const qry = "UPDATE vulnerability set confirmed=? where type=? and payload=? and element=? and url=?";
+		this.run(qry, [vulnerability.confirmed, vulnerability.type, vulnerability.payload, vulnerability.element, vulnerability.url]);
 	}
 }

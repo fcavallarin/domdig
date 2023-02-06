@@ -20,55 +20,89 @@ exports.loadPayloadsFromFile = loadPayloadsFromFile;
 exports.error = error;
 exports.getElementSelector = getElementSelector;
 exports.Vulnerability = Vulnerability;
+exports.replaceSinkName = replaceSinkName;
 
 
-function Vulnerability(type, payload, element, url, message){
+function Vulnerability(type, payload, element, url, message, confirmed){
 	this.type = type;
-	this.payload = payload;
+	// this.payload_orig = payload;
+	this.payload = replaceSinkName(payload);
 	this.element = element || "N/A";
-	this.url = url || "";
+	// this.url_orig = url;
+	this.confirmed = !(confirmed === false);
+	// The URL that was set when the vulnerability was found.
+	this.url = url ? replaceSinkName(url) : "";
 	if(message){
 		this.message = message;
 	} else switch (type){
 		case consts.VULNTYPE_DOM:
 			this.message = "DOM XSS found";
 			break;
-		case consts.VULNTYPE_REFLECTED:
-			this.message = "Reflected DOM XSS found";
-			break;
 		case consts.VULNTYPE_STORED:
 			this.message = "Stored XSS found";
+			break;
 		case consts.VULNTYPE_TEMPLATEINJ:
 			this.message = "Template injection found";
 			break;
 	}
 }
 
-function addVulnerability(jar, db, type, vuln, url, message, verbose){
-	message = message || null;
-	p = vuln.payload.replace("window." + consts.SINKNAME + "({0})", "alert(1)");
-	for(let e of jar){
-		if(e.payload == p && e.element == vuln.element && e.type == type && (!message || e.message == message) && (!url || e.url == url)){
-			return;
+Vulnerability.prototype.equals =  function(type, element, payload, url){
+	return this.payload == payload && this.element == element  && this.type == type && this.url == url;
+}
+
+function replaceSinkName(str){
+	return str.replace(new RegExp("window\\." + consts.SINKNAME + "\\(" + "(\\{0\\}|[0-9])+" + "\\)"), "alert(1)");
+}
+
+function getVulnerability(jar, vuln){
+	for(let v of jar){
+		if(v.equals(vuln.type, vuln.element, vuln.payload, vuln.url)){
+			return v;
 		}
 	}
-	const v = new Vulnerability(type, p, vuln.element, url, message);
-	jar.push(v);
-	if(verbose){
-		printVulnerability(v);
-	}
-	if(db){
-		db.addVulnerability(v);
+	return null;
+}
+
+function addVulnerability(jar, db, type, vuln, url, message, verbose, confirmed){
+	message = message || null;
+	const v = new Vulnerability(type, vuln.payload, vuln.element, url, message, confirmed);
+	const existing = getVulnerability(jar, v);
+	if(existing){
+		if(type == consts.VULNTYPE_DOM){
+			if(!existing.confirmed){
+				existing.confirmed = confirmed;
+			} else {
+				// If there is the same vuln already confirmed, then do nothing
+				return;
+			}
+
+			if(db){
+				db.updateVulnerability(existing);
+			}
+		}
+	} else {
+		jar.push(v);
+
+		if(verbose){
+			printVulnerability(v);
+		}
+		if(db){
+			db.addVulnerability(v);
+		}
 	}
 
 }
 
 function printVulnerability(v){
-	var msg = chalk.red('[!]') + ` ${v.message}: ${v.element} → ${v.payload}`;
+	const msg = [chalk.red('[!]'), `${v.message}: ${v.element} → ${v.payload}`];
 	if(v.url){
-		msg += " → " + v.url;
+		msg.push(`→ ${v.url}`);
 	}
-	console.log(msg);
+	if(!v.confirmed){
+		msg.push(chalk.yellow("UNCONFIRMED"));
+	}
+	console.log(msg.join(" "));
 }
 
 function printRequest(req){
@@ -146,14 +180,18 @@ function usage(){
 		"   -J                print findings as JSON",
 		"   -q                quiet mode",
 		"   -P PATH           load payloads from file (JSON)",
-		"   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
 		"   -X REGEX          regular expression to eXclude urls (ex -X'.*logout.*' -X'.*signout.*')",
+		// "   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
+		"   -m MODES          comma-separated list of scan modes: domscan,fuzz (default: all)",
+		"                        domscan  crawl the DOM injecting payloads into input values",
+		"                        fuzz     fuzz the URL (query params and hash) with XSS payloads",
 		"   -T                disabe template injection check",
+		"   -S                disabe Stored XSS check",
 		"   -g KEY/VALUE      set browser's Local/Session storaGe (ex -g L:foo=bar -g S:bar=foo or JSON)",
 		"   -d FILE_NAME      save all the results to a SQLite3 database",
-		"   -r                print all XHR/fetch request triggered while scanning",
+		"   -r                print all XHR/fetch and websocket requests triggered while scanning",
 		"   -D                dry-run, do not use any payload, just crawl the page",
-		"   -b                do not restart the browser every new payload",
+		"   -B                restart the browser every new payload",
 		"   -h                this help"
 	].join("\n"));
 }
@@ -296,8 +334,14 @@ function parseArgs(args, url){
 			case "D":
 				options.dryRun = args[arg];
 				break;
-			case "b":
-				options.singleBrowser = args[arg];
+			case "B":
+				options.singleBrowser = !args[arg];
+				break;
+			case "S":
+				options.scanStored = !args[arg];
+				break;
+			case "T":
+				options.checkTemplateInj = !args[arg];
 				break;
 
 		}
