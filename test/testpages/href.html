@@ -1,0 +1,16 @@
+<html>
+<head>
+	<script src="common.js"></script>
+</head>
+
+<body>
+	<div id=target></div>
+	<script>
+		var text = getHash();
+		const a = document.createElement("a")
+        a.href = text;
+        a.textContent = "a link"
+        document.getElementById("target").appendChild(a)
+	</script>
+</body>
+</html>

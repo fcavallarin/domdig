@@ -34,6 +34,15 @@ const qryCreateTableVulnerability = `
 	)
 `;
 
+const qryCreateTableScanSettings = `
+	CREATE TABLE scan_settings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		parameter TEXT,
+		value TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)
+`;
+
 exports.Database = class {
 	constructor(dbName){
 		this.dbName = dbName;
@@ -62,6 +71,7 @@ exports.Database = class {
 		db.exec(qryCreateTableRequest);
 		db.exec(qryCreateTableScanInfo);
 		db.exec(qryCreateTableVulnerability);
+		db.exec(qryCreateTableScanSettings);
 		db.close();
 	}
 
@@ -82,5 +92,12 @@ exports.Database = class {
 	updateVulnerability(vulnerability){
 		const qry = "UPDATE vulnerability set confirmed=? where type=? and payload=? and element=? and url=?";
 		this.run(qry, [vulnerability.confirmed, vulnerability.type, vulnerability.payload, vulnerability.element, vulnerability.url]);
+	}
+
+	addScanArguments(args){
+		const qry = "INSERT INTO scan_settings (parameter, value) values (?, ?)";
+		for(const arg of args){
+			this.run(qry, arg);
+		}
 	}
 }

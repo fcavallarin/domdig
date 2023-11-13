@@ -1,13 +1,13 @@
 {
   "name": "domdig",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "DOM XSS scanner for Single Page Applications",
   "main": "domdig.js",
   "dependencies": {
-    "minimist": "^1.2.0",
-    "chalk": "^2.4.2",
     "better-sqlite3": "^8.0.1",
-    "htcrawl": "^1.0.7"
+    "chalk": "^2.4.2",
+    "htcrawl": "^1.2.0",
+    "minimist": "^1.2.0"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"

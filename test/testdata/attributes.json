@@ -1,0 +1,1 @@
+{"command":["-l","-T","-S","http://127.0.0.1:9092/attributes.html"],"payloads":["javascript:window.___xssSink({0})","java%0ascript:window.___xssSink({0})"]}
