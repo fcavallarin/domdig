@@ -30,7 +30,7 @@ DOMDig can perform three different checks:
 2. Stored DOM XSS
 3. Template Injection
 
-On top of these checks, it always verifies if our payload is iserted into some "interesting" element's properties such as `a.href`, `form.action` and `srcdoc`.
+On top of these checks, it always verifies if our payload is inserted into some "interesting" element's properties such as `a.href`, `form.action` and `srcdoc`.
 In case one is found, it's reported as a warning.
 
 ## DOM XSS
@@ -45,8 +45,8 @@ be guessed by a scanner. An example may be a search functionality that takes the
 the URL's hash as a JSON string. 
 
 ### fuzz
-It fuzzes the URL (query parameters and the hash) to see if our code gets executed on page load. If no code is executed, it cralws the
-DOM triggerring HTML events hoping to find simething that executes our payload.  
+It fuzzes the URL (query parameters and the hash) to see if our code gets executed on page load. If no code is executed, it crawls the
+DOM triggering HTML events hoping to find something that executes our payload.  
 It can also discover the classical Reflected XSS.
 
 ## Stored DOM XSS
@@ -70,7 +70,7 @@ to understand the relation between the injected payload and the URL schema.
 
 # Crawl Engine
 DOMDig uses [htcrawl](https://htcrawl.org) as crawling engine.  
-The diagram shows the recursive crawling proccess.  
+The diagram shows the recursive crawling process.  
 ![SPA Crawling Diagram](https://htcrawl.org/img/htcap-flowchart.png).   
 The video below shows the engine crawling gmail. The crawl lasted for many hours and about 3000 XHR request have been captured.
 
