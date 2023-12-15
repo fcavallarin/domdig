@@ -1,0 +1,59 @@
+<html>
+<head>
+	<script src="common.js"></script>
+</head>
+
+<body>
+	<div id=target></div>
+	<div id=out></div>
+	<button onclick="createStep2()">Next</button>
+	<script>
+		
+		function printName (){
+			var hash = getHash();
+			if(hash){
+				var [key, ...value] = hash.split("=");
+				
+				if(key == "unguessableName" && value.length > 0){
+					document.querySelector("#out").innerHTML = value.join("=");
+				}
+			}
+		}
+		var CNT = 0;
+		function next(){
+			var html;
+			if(CNT == 10){
+				// setHash("unguessableName=" + document.querySelector("#i" + (CNT-1)).value); return;
+				html = '<div><a href="#unguessableName=' + encodeURIComponent(document.querySelector("#i" + (CNT-1)).value) + '">end</a><div>'
+				// html = '<div><a href="#unguessableName=' + document.querySelector("#i" + (CNT-1)).value + '">end</a><div>';  /*this leads to unverifiex XSS*/
+			} else {
+				html = "<div><div><input type=text id=i" + CNT + "><button onclick=next()>next</button><span>Current: "+CNT+"</span></div><div>";
+				CNT++;
+			}
+			//document.querySelector("#target").innerHTML += html;
+			const wrapper = document.createElement("div");
+			wrapper.innerHTML = html;
+			document.querySelector("#target").appendChild(wrapper);
+
+		}
+
+		function createStep2(){
+			const txt = document.createElement("input");
+			txt.type="text"
+			const b = document.createElement("button");
+			b.onclick = function(){
+				// document.location.href = document.location.href.split("#")[0] + "#unguessableName=" + txt.value;	
+				next();
+			}
+			b.innerText = "GO";
+			document.querySelector("#target").appendChild(txt);
+			document.querySelector("#target").appendChild(b);
+		}
+		
+		window.onhashchange = printName;
+		printName();
+		
+	</script>
+
+</body>
+</html>

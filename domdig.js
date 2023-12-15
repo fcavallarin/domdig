@@ -6,6 +6,8 @@ const utils = require('./utils');
 const defpayloads = require('./payloads');
 const URL = require('url').URL;
 const Database = require('./database').Database;
+const SequenceBuilder = require('./sequence-builder').SequenceBuilder;
+const SequenceExecutor = require('./sequence-executor').SequenceExecutor;
 
 const PAYLOADMAP = [];
 var PAYLOADMAP_I = 0;
@@ -14,10 +16,12 @@ var VERBOSE = true;
 var DATABASE = null;
 var CRAWLER = null;
 var USE_SINGLE_BROWSER = false;
+var TARGET_ELEMENT = null;
+var SEQUENCE_EXECUTOR = null;
 
-function getNewPayload(payload, element){
+function getNewPayload(payload, element, info){
 	const p = payload.replace("{0}", PAYLOADMAP_I);
-	PAYLOADMAP[PAYLOADMAP_I] = {payload:payload, element:element};
+	PAYLOADMAP[PAYLOADMAP_I] = {payload:payload, element:element, info:JSON.stringify(info)};
 	PAYLOADMAP_I++;
 	return p;
 }
@@ -34,27 +38,6 @@ function getUrlMutations(url, payload){
 	return muts;
 }
 
-async function scanAttributes(crawler){
-	// use also 'srcdoc' since it can contain also esacped html: <iframe srcdoc="&lt;img src=1 onerror=alert(1)&gt;"></iframe>
-	// content can have a "timer" so maybe is not executed in time
-	const attrs = ["href", "action", "formaction", "srcdoc", "content"];
-	for(let attr of attrs){
-		const elems = await crawler.page().$$(`[${attr}]`);
-		for(let e of elems){
-			// must use evaluate since puppetteer cannot get non-standard attributes
-			let val = await e.evaluate( (i,a) => i.getAttribute(a), attr);
-			if(val.startsWith(consts.SINKNAME) == false){
-				continue;
-			} else {
-				let key = val.match(/\(([0-9]+)\)/)[1];
-				let es = await utils.getElementSelector(e);
-				utils.addVulnerability(VULNSJAR, DATABASE, consts.VULNTYPE_WARNING, PAYLOADMAP[key], null, `Attribute '${attr}' of '${es}' set to payload`, VERBOSE);
-				break;
-			}
-		}
-	}
-}
-
 async function triggerOnpaste(crawler){
 	const elems = await crawler.page().$$('[onpaste]');
 	for(let e of elems){
@@ -66,42 +49,78 @@ async function triggerOnpaste(crawler){
 	}
 }
 
-function sequenceError(message, seqline){
-	if(seqline){
-		message = "action " + seqline + ": " + message;
+async function loadHtcrawl(targetUrl, options){
+	if(!CRAWLER || !USE_SINGLE_BROWSER){
+		// instantiate htcrawl
+		crawler = await htcrawl.launch(targetUrl, options);
+		CRAWLER = crawler;
+	} else {
+		crawler = CRAWLER;
+		firstRun = false;
+		await crawler.newPage(targetUrl);
 	}
-	if(DATABASE){
-		DATABASE.updateStatus(message, true);
+	if(options.localStorage){
+		await crawler.page().evaluateOnNewDocument( (localStorage) => {
+			for(let l of localStorage){
+				let fn = l.type == "L" ? window.localStorage : window.sessionStorage;
+				fn.setItem(l.key, l.val);
+			}
+		}, options.localStorage);
 	}
-	console.error(chalk.red(message));
-	process.exit(2);
+	await crawler.page().setCacheEnabled(false);
+	return crawler;
 }
 
+function fuzzObject(obj, payload) {
+    const copies = [];
+
+    const createCopy = (original, path = []) => {
+        for (const key in original) {
+            if (original.hasOwnProperty(key)) {
+                const newPath = path.concat(key);
+
+                if (typeof original[key] === 'object' && original[key] !== null) {
+                    createCopy(original[key], newPath);
+                } else {
+                    const newObject = structuredClone(obj);
+                    let current = newObject;
+
+                    for (let i = 0; i < newPath.length - 1; i++) {
+                        current = current[newPath[i]];
+                    }
+
+                    current[newPath[newPath.length - 1]] = payload;
+                    copies.push(newObject);
+                }
+            }
+        }
+    };
+
+    createCopy(obj);
+    return copies;
+}
+
+function isFuzzObject(obj) {
+	if (typeof obj === 'string' && obj.includes(consts.SINKNAME)) {
+		return true;
+	}
+	if(typeof obj == 'object' && !!obj){
+		for (let k in obj) {
+			if (isFuzzObject(obj[k])) {
+				return true;
+			}
+		}
+	}
+    return false;
+}
+
+
 async function loadCrawler(vulntype, targetUrl, payload, setXSSSink, checkTplInj, options){
-	// var hashSet = false;
 	var loaded = false;
 	var crawler;
 	var retries = 4;
-	var firstRun = true;
-	//options.openChromeDevtoos = true;
 	do{
-		if(!CRAWLER || !USE_SINGLE_BROWSER){
-			// instantiate htcrawl
-			crawler = await htcrawl.launch(targetUrl, options);
-			CRAWLER = crawler;
-		} else {
-			crawler = CRAWLER;
-			firstRun = false;
-			await crawler.newPage(targetUrl);
-		}
-		if(options.localStorage){
-			await crawler.page().evaluateOnNewDocument( (localStorage) => {
-				for(let l of localStorage){
-					let fn = l.type == "L" ? window.localStorage : window.sessionStorage;
-					fn.setItem(l.key, l.val);
-				}
-			}, options.localStorage);
-		}
+		crawler = await loadHtcrawl(targetUrl, options);
 
 		const handleRequest = async function(e, crawler){
 			if(options.printRequests){
@@ -117,6 +136,54 @@ async function loadCrawler(vulntype, targetUrl, payload, setXSSSink, checkTplInj
 		crawler.on("navigation", handleRequest);
 		crawler.on("jsonp", handleRequest);
 		crawler.on("websocket", handleRequest);
+
+		crawler.page().exposeFunction("__domdig_on_postmessage__", async (message, origin, url) => {
+			// console.log(message, origin)
+			if(isFuzzObject(message)){
+				return;
+			}
+			const p = getNewPayload(payload, `postMessage/${origin}`)
+			const fuzzMessages = fuzzObject(message, p);
+
+			const frames = await crawler.page().frames();
+			let src;
+			for(const frame of frames){
+				// console.log(frame.url())
+				const fu = new URL(frame.url());
+				if(fu.origin == origin){
+					src = frame;
+				}
+			}
+			src.evaluate( (dst, messages) => {
+				if(window.top.location.toString() == dst){
+					for(let message of messages){
+						window.top.postMessage(message, "*");
+					}
+				} else {
+					window.top.document.querySelectorAll("iframe").forEach(frame => {
+						if(frame.contentWindow.document.location.toString() == dst){
+							for(let message of messages){
+								frame.contentWindow.postMessage(message, "*");
+							}
+						}
+					})
+				}
+			}, url, fuzzMessages);
+		})
+		crawler.page().evaluateOnNewDocument(() => {
+			window.addEventListener("message", async event => {
+				await window.__domdig_on_postmessage__(event.data, event.origin, `${document.location}`);
+			});
+		});
+		crawler.page().on("frameattached", async frame => {
+			try{
+				await frame.evaluate(() => {
+					window.addEventListener("message", async event => {
+						await window.__domdig_on_postmessage__(event.data, event.origin, `${document.location}`);
+					});
+				});
+			}catch(e){}
+		});
 		if(!options.dryRun){
 			if(setXSSSink){
 				crawler.page().exposeFunction(consts.SINKNAME, function(key) {
@@ -136,30 +203,17 @@ async function loadCrawler(vulntype, targetUrl, payload, setXSSSink, checkTplInj
 					const p = getNewPayload(payload, e.params.element);
 					try{
 						await crawler.page().$eval(e.params.element, (i, p) => i.value = p, p);
+
+						// return false to prevent element to be automatically filled with a random value
+						// we need to manually trigger angularjs 'input' event that won't be triggered by htcrawl (due to return false)
+						await crawler.page().$eval(e.params.element, el => {
+							const evt = document.createEvent('HTMLEvents');
+							evt.initEvent("input", true, false);
+							el.dispatchEvent(evt);
+						});
 					}catch(e){}
-					// return false to prevent element to be automatically filled with a random value
-					// we need to manually trigger angularjs 'input' event that won't be triggered by htcrawl (due to return false)
-					crawler.page().$eval(e.params.element, el => {
-						const evt = document.createEvent('HTMLEvents');
-						evt.initEvent("input", true, false);
-						el.dispatchEvent(evt);
-					});
 					return false;
 				});
-
-				// change page hash before the triggering of the first event
-				// to see if some code, during crawling, takes the hash and evaluates our payload
-				// It will result in a sort of assisted-XSS where the victim, after following the XSS URL, 
-				// has to perform some actions.
-				// It's useless since the same (a better) test is performed by the Reflected XSS check.
-				// crawler.on("triggerevent", async function(e, crawler){
-				// 	if(!hashSet){
-				// 		const p = getNewPayload(payload, "hash");
-				// 		await crawler.page().evaluate(p => document.location.hash = p, p);
-				// 		hashSet = true;
-				// 		PREVURL = crawler.page().url();
-				// 	}
-				// });
 
 				if(checkTplInj){
 					crawler.on("eventtriggered", async function(e, crawler){
@@ -193,70 +247,40 @@ async function loadCrawler(vulntype, targetUrl, payload, setXSSSink, checkTplInj
 		}
 	} while(!loaded);
 
-	if(options.initSequence  && firstRun){
-		ps(`Start initial sequence`);
-		let seqline = 1;
-		for(let seq of options.initSequence){
-			switch(seq[0]){
-				case "sleep":
-					ps(`Sleep for ${seq[1]} seconds`);
-					await sleep(seq[1] * 1000);
-					break;
-				case "write":
-					ps(`Filling input ${seq[1]} with "${seq[2]}"`);
-					try{
-						await crawler.page().type(seq[1], seq[2]);
-					} catch(e){
-						sequenceError("element not found", seqline);
-					}
-					break;
-				case "click":
-					ps(`Click ${seq[1]}`);
-					try{
-						await crawler.page().click(seq[1]);
-					} catch(e){
-						sequenceError("element not found", seqline);
-					}
-					await crawler.waitForRequestsCompletion();
-					break;
-				case "clickToNavigate":
-					ps(`Click to navigate ${seq[1]} ${seq[2]}`);
-					try{
-						await crawler.clickToNavigate(seq[1], seq[2]);
-					} catch(err){
-						sequenceError(err, seqline);
-					}
-					break;
-				case "navigate":
-					ps(`Navigate ${seq[1]}`);
-					try{
-						await crawler.navigate(seq[1]);
-					} catch(err){
-						sequenceError(err, seqline);
-					}
-					break;
-				default:
-					sequenceError("action not found", seqline);
+	if(SEQUENCE_EXECUTOR){
+		try{
+			await SEQUENCE_EXECUTOR.run(crawler, "runtime");
+		}catch(e){
+			if(DATABASE){
+				DATABASE.updateStatus(`${e}`, true);
 			}
-			seqline++;
+			if(VERBOSE) utils.printError(`Runtime sequence error: ${e}`);
+			return null;
 		}
-		ps(`Initial sequence finished`);
 	}
 
 	return crawler;
 }
 
+
+
+
 async function scanDom(crawler, options){
 	let timeo = setTimeout(function(){
 		crawler.stop();
 	}, options.maxExecTime);
-	await crawler.start();
+	let target = null;
+	if(TARGET_ELEMENT){
+		ps(`Scanning ${TARGET_ELEMENT}`);
+		target = await crawler.page().$(TARGET_ELEMENT);
+	}
+	await crawler.start(target);
 	clearTimeout(timeo);
 
 }
 
 async function close(crawler){
-	await sleep(200);
+	await utils.sleep(200);
 	try{
 		if(USE_SINGLE_BROWSER){
 			await crawler.page().close();
@@ -280,7 +304,6 @@ async function scanStored(url, options){
 	crawler.on("fillinput", () => true);
 	await scanDom(crawler, options);
 	await triggerOnpaste(crawler);
-	await scanAttributes(crawler);
 	await close(crawler);
 	ps("Stored XSS scan finshed");
 }
@@ -300,13 +323,6 @@ async function crawlDOM(crawler, options){
 
 	}
 }
-
-function sleep(n){
-	return new Promise(resolve => {
-		setTimeout(resolve, n);
-	});
-};
-
 
 async function retryScan(retries, fnc){
 	while(true) try{
@@ -339,13 +355,6 @@ async function runDOMScan(payloads, targetUrl, isTplInj, options){
 			if(crawler == null)return;
 			await scanDom(crawler, options);
 			await triggerOnpaste(crawler);
-			await scanAttributes(crawler);
-
-			// Last chance, let's try to change the hash
-			// await crawler.page().evaluate(p => document.location.hash = p, getNewPayload(payload, "hash"));
-			// await triggerOnpaste(crawler);
-			// await scanAttributes(crawler);
-
 			await close(crawler);
 
 			if(options.scanStored){
@@ -374,7 +383,6 @@ async function runFuzzer(payloads, targetUrl, isTplInj, options){
 					await scanDom(crawler, options);
 				}
 				await triggerOnpaste(crawler);
-				await scanAttributes(crawler);
 				await close(crawler);
 
 				if(options.scanStored){
@@ -390,7 +398,7 @@ async function runFuzzer(payloads, targetUrl, isTplInj, options){
 
 (async () => {
 	var targetUrl, cnt, crawler;
-	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "B", "S"]});
+	const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "B", "S", "O"]});
 	if(argv.q)VERBOSE = false;
 	if(VERBOSE)utils.banner();
 	if('h' in argv){
@@ -407,7 +415,11 @@ async function runFuzzer(payloads, targetUrl, isTplInj, options){
 	} catch(e){
 		utils.error(e);
 	}
-	const options = utils.parseArgs(argv, targetUrl);
+	const {options, settings} = utils.parseArgs(argv, targetUrl);
+	if(argv.m){
+		settings.push(["-m", argv.m])
+	}
+	settings.push([null, targetUrl.href]);
 	options.crawlmode = "random";
 	if(options.databaseFileName){
 		if(fs.existsSync(options.databaseFileName)){
@@ -416,6 +428,7 @@ async function runFuzzer(payloads, targetUrl, isTplInj, options){
 		}
 		DATABASE = new Database(options.databaseFileName);
 		DATABASE.init();
+		DATABASE.addScanArguments(settings);
 	}
 	if(!options.maxExecTime) options.maxExecTime = consts.DEF_MAXEXECTIME;
 	const allModes = [consts.MODE_DOMSCAN, consts.MODE_FUZZ];
@@ -443,6 +456,47 @@ async function runFuzzer(payloads, targetUrl, isTplInj, options){
 
 	process.on('SIGTERM', sigHandler);
 	process.on('SIGINT', sigHandler);
+
+	if(options.sequenceBuilder){
+		if(fs.existsSync(options.sequenceBuilder)){
+			utils.printError(`${options.sequenceBuilder} already exists`);
+			process.exit(1);
+		}
+		ps("Running Sequence Builder, use Domdig's DevTools panel ...");
+		const builder = new SequenceBuilder(targetUrl.href, options);
+		const builderResult = await builder.run();
+		if(builderResult.discart){
+			process.exit(0);
+		}
+		fs.writeFileSync(options.sequenceBuilder, JSON.stringify(builderResult.sequence));
+		ps(`Sequence saved to ${options.sequenceBuilder}`);
+		if(builderResult.next == "scan"){
+			options.initSequence = builderResult.sequence;
+			if(builderResult.targetUrl){
+				targetUrl.href = builderResult.targetUrl;
+			}
+		} else {
+			process.exit(0);
+		}
+	}
+
+	if(options.initSequence){
+		try{
+			SEQUENCE_EXECUTOR = new SequenceExecutor(options.initSequence, status => ps(status));
+			if(SEQUENCE_EXECUTOR.sequence.start.length > 0){
+				const seqCrawler = await loadHtcrawl(targetUrl.href, options);
+				await seqCrawler.load();
+				await SEQUENCE_EXECUTOR.run(seqCrawler, "start");
+				await seqCrawler.page().close();
+			}
+		}catch(e){
+			if(DATABASE){
+				DATABASE.updateStatus(`${e}`, true);
+			}
+			console.error(chalk.red(`${e}`));
+			process.exit(2);
+		}
+	}
 
 	ps(`Starting scan\n    modes: ${modes.join(",")}  scan stored: ${options.scanStored ? "yes" : "no"}   check template injection: ${options.checkTemplateInj ? "yes" : "no"}`);
 

@@ -1,0 +1,17 @@
+<html>
+<head>
+	<script src="common.js"></script>
+</head>
+
+<body>
+	<div id=target></div>
+    
+    <script>
+        window.addEventListener('message', (event) => {
+            if(event.origin == "http://127.0.0.1:9092"){
+                console.log("Message in frame:", event.origin);
+                document.querySelector("#target").innerHTML=JSON.stringify(event.data.d[1]);
+            }
+        });
+    </script>
+</html>

@@ -53,6 +53,8 @@ exports.xss = [
 	"\\x3c/scrIpt\\x3e\\x3cscript\\x3ewindow.___xssSink({0})\\x3c/scrIpt\\x3e",
 	"\\74/scrIpt\\76\\74script\\76window.___xssSink({0})\\74/scrIpt\\76",
 
+	"${window.___xssSink({0})}",
+
 ];
 
 // template injection. it will be rendered as [object Object]123456[object Object]

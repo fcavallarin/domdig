@@ -1,0 +1,15 @@
+<html>
+<head>
+	<script src="common.js"></script>
+</head>
+
+<body>
+    <button id="sendMessage">Invia Messaggio</button>
+    <iframe id="iframe" src="http://localhost:9092/postmessage-frame.html" style="width:600px; height:400px;"></iframe>
+    <script>
+        document.getElementById('sendMessage').addEventListener('click', () => {
+            document.querySelector("iframe").contentWindow.postMessage({a:1, b:"s", c: {"a1":"aaa"}, d:[1,2]}, '*');
+        });
+    </script>
+</body>
+</html>

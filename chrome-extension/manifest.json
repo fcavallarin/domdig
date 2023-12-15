@@ -1,0 +1,24 @@
+  {
+    "manifest_version": 3,
+    "name": "Domdig",
+    "version": "1.0",
+    "permissions": ["scripting", "debugger", "activeTab"],
+    "action": {},
+    "commands": {
+        "open-panel": {
+            "description": "Open Panel",
+            "suggested_key": {
+              "default": "Ctrl+Shift+H",
+              "mac": "Ctrl+Shift+H"
+            }
+        }
+    },
+    "devtools_page": "ui.html",
+    "background": {
+        "service_worker": "background.js"
+    },
+    "host_permissions": [
+      "<all_urls>"
+    ]
+  }
+  

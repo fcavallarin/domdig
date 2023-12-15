@@ -1,0 +1,49 @@
+<html>
+<head>
+	<script src="common.js"></script>
+</head>
+
+<body>
+	<div id=target></div>
+	<div id=out></div>
+	<div id=status></div>
+	<button onclick="createStep2()">Next</button>
+	<script>
+
+
+		
+		function printName (){
+			var hash = getHash();
+			if(hash){
+				var [key, ...value] = hash.split("=");
+				
+				if(key == "unguessableName" && value.length > 0){
+					document.querySelector("#out").innerHTML = value.join("=");
+				}
+			}
+		}
+		
+		function createStep2(){
+			const txt = document.createElement("input");
+			txt.type="text"
+			const b = document.createElement("button");
+			b.onclick = async function(){
+				document.querySelector("#status").innerHTML = "Fetching data<br>";
+				for(let i = 0; i < 10; i++){
+					await fetch("data.json?a="+Date.now());	
+					document.querySelector("#status").innerHTML += "Package " + i + " fetched<br>";
+				}
+				setHash("unguessableName=" + txt.value);
+			}
+			b.innerText = "GO";
+			document.querySelector("#target").appendChild(txt);
+			document.querySelector("#target").appendChild(b);
+		}
+		
+		window.onhashchange = printName;
+		printName();
+		
+	</script>
+
+</body>
+</html>

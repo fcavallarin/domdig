@@ -10,6 +10,8 @@ It is based on [htcrawl](https://htcrawl.org), a node library powerful enough to
 - Handles XHR, fetch, JSONP and websockets requests
 - Supports cookies, proxy, custom headers, http auth and more
 - Scriptable login sequences
+- Sequence recorder
+- Postmessage fuzzer
 
 # GETTING STARTED
 ## Installation
@@ -82,9 +84,11 @@ Each element of the list is an array where the first element is the name of the 
 Actions are:
 - navigate &lt;url&gt;
 - write &lt;selector&gt; &lt;text&gt;
+- select &lt;selector&gt; &lt;value&gt;
 - click &lt;selector&gt;
 - clickToNavigate &lt;selector&gt;
 - sleep &lt;seconds&gt;
+- setTarget &lt;selector&gt;
 
 ## Example
 ```

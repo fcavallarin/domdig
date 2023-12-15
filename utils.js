@@ -18,9 +18,9 @@ exports.writeJSON = writeJSON;
 exports.prettifyJson = prettifyJson;
 exports.loadPayloadsFromFile = loadPayloadsFromFile;
 exports.error = error;
-exports.getElementSelector = getElementSelector;
 exports.Vulnerability = Vulnerability;
 exports.replaceSinkName = replaceSinkName;
+exports.sleep = sleep;
 
 
 function Vulnerability(type, payload, element, url, message, confirmed){
@@ -144,13 +144,14 @@ function error(message){
 }
 
 function banner(){
+	const { version } = require(`${__dirname}/package.json`);
 	console.log(chalk.yellow([
 		"   ___  ____  __  ______  _",
 		"  / _ \\/ __ \\/  |/  / _ \\(_)__ _",
 		" / // / /_/ / /|_/ / // / / _ `/",
 		"/____/\\____/_/  /_/____/_/\\_, /"
 	].join("\n")));
-	console.log(chalk.green(" ver 1.0.0               ") + chalk.yellow("/___/"));
+	console.log(chalk.green(` ver ${version}               `) + chalk.yellow("/___/"));
 	console.log(chalk.yellow("DOM XSS scanner for Single Page Applications"));
 	console.log(chalk.blue("https://github.com/fcavallarin/domdig"));
 	console.log("");
@@ -192,6 +193,8 @@ function usage(){
 		"   -r                print all XHR/fetch and websocket requests triggered while scanning",
 		"   -D                dry-run, do not use any payload, just crawl the page",
 		"   -B                restart the browser every new payload",
+		"   -L FILE_NAME      run the Sequence Builder and save the sequnce to file",
+		"   -O                do not crawl non same-origin frames",
 		"   -h                this help"
 	].join("\n"));
 }
@@ -233,7 +236,14 @@ function parseCookiesString(str, domain){
 }
 
 
-function parseArgs(args, url){
+function parseArgs(args, url, database){
+	const save = opt => {
+		if(!database){
+			return;
+		}
+		database.addScanArgument(opt);
+	}
+	const settings = [];
 	const options = {};
 	for(let arg in args){
 		switch(arg){
@@ -243,19 +253,24 @@ function parseArgs(args, url){
 				} catch(e){
 					options.setCookies = parseCookiesString(args[arg], url.hostname);
 				}
+				settings.push([`-${arg}`, JSON.stringify(options.setCookies)]);
 				break;
 			case "A":
 				var arr = args[arg].split(":");
 				options.httpAuth = [arr[0], arr.slice(1).join(":")];
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "x":
 				options.maxExecTime = parseInt(args[arg]) * 1000;
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "U":
 				options.userAgent = args[arg];
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "R":
 				options.referer = args[arg];
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "p":
 				var tmp = args[arg].split(":");
@@ -264,9 +279,16 @@ function parseArgs(args, url){
 				} else {
 					options.proxy = args[arg];
 				}
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "l":
 				options.headlessChrome = !args[arg];
+				if(!options.headlessChrome){
+					options.openChromeDevtools = true;
+				}
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
 				break;
 			case "E":
 				try {
@@ -279,6 +301,7 @@ function parseArgs(args, url){
 						options.extraHeaders[t[0]] = t.slice(1).join("=");
 					}
 				}
+				settings.push([`-${arg}`, JSON.stringify(options.extraHeaders)]);
 				break;
 			case "g":
 				try {
@@ -292,7 +315,6 @@ function parseArgs(args, url){
 							options.localStorage.push({type: t[0] == "S" ? "S" : "L", key: t[1], val: ls[s]});
 						}
 					}
-
 				} catch(e){
 					let ls = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
 					options.localStorage = [];
@@ -309,6 +331,7 @@ function parseArgs(args, url){
 						options.localStorage.push({type:type, key:key, val:val});
 					}
 				}
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "s":
 				try{
@@ -321,32 +344,64 @@ function parseArgs(args, url){
 						process.exit(1);
 					}
 				}
+				settings.push([`-${arg}`, JSON.stringify(options.initSequence)]);
 				break;
 			case "X":
 				options.excludedUrls = typeof args[arg] == 'string' ? [args[arg]] : args[arg];
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "d":
 				options.databaseFileName = args[arg];
+				settings.push([`-${arg}`, args[arg]]);
 				break;
 			case "r":
 				options.printRequests = args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
 				break;
 			case "D":
 				options.dryRun = args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
 				break;
 			case "B":
 				options.singleBrowser = !args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
 				break;
 			case "S":
 				options.scanStored = !args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
 				break;
 			case "T":
 				options.checkTemplateInj = !args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
 				break;
-
+			case "L":
+				options.sequenceBuilder = args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
+				break;
+			case "O":
+				options.includeAllOrigins = !args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
+				break;
 		}
 	}
-	return options;
+	return {
+		options: options,
+		settings: settings,
+	}
 }
 
 function genFilename(fname){
@@ -408,35 +463,8 @@ function prettifyJson(obj, layer){
 	return  obj;
 }
 
-
-async function getElementSelector(element){
-	return await element.evaluate( i => {
-		function gs(element){
-			if(!element || !(element instanceof HTMLElement))
-				return "";
-			var name = element.nodeName.toLowerCase();
-			var ret = [];
-			var selector = ""
-			var id = element.getAttribute("id");
-
-			if(id && id.match(/^[a-z][a-z0-9\-_:\.]*$/i)){
-				selector = "#" + id;
-			} else {
-				let p = element;
-				let cnt = 1;
-				while(p = p.previousSibling){
-					if(p instanceof HTMLElement && p.nodeName.toLowerCase() == name){
-						cnt++;
-					}
-				}
-				selector = name + (cnt > 1 ? `:nth-of-type(${cnt})` : "");
-				if(element != document.documentElement && name != "body" && element.parentNode){
-					ret.push(gs(element.parentNode));
-				}
-			}
-			ret.push(selector);
-			return ret.join(" > ");
-		}
-		return gs(i);
+function sleep(n){
+	return new Promise(resolve => {
+		setTimeout(resolve, n);
 	});
-}
+};
