@@ -128,7 +128,7 @@ class DOMDig {
 		do{
 			crawler = await this.loadHtcrawl(targetUrl, options);
 
-			const handleRequest = async function(e, crawler){
+			const handleRequest = async (e, crawler) => {
 				if(options.printRequests){
 					utils.printRequest(e.params.request)
 				}
@@ -192,7 +192,7 @@ class DOMDig {
 			});
 			if(!options.dryRun){
 				if(setXSSSink){
-					crawler.page().exposeFunction(consts.SINKNAME, function(key) {
+					crawler.page().exposeFunction(consts.SINKNAME, (key) => {
 						const url = crawler.page().url();
 						var confirmed = true;
 						// When searching for DOM XSS, we need to check if the current URL has changed and contais our payload.
@@ -205,7 +205,7 @@ class DOMDig {
 
 				if(payload != null){
 					// fill all inputs with a payload
-					crawler.on("fillinput", async function(e, crawler){
+					crawler.on("fillinput", async (e, crawler) => {
 						const p = this.getNewPayload(payload, e.params.element);
 						try{
 							await crawler.page().$eval(e.params.element, (i, p) => i.value = p, p);
@@ -222,7 +222,7 @@ class DOMDig {
 					});
 
 					if(checkTplInj){
-						crawler.on("eventtriggered", async function(e, crawler){
+						crawler.on("eventtriggered", async (e, crawler) => {
 							var cont = await crawler.page().content();
 							var re = /\[object [A-Za-z]+\]([0-9]+)\[object [A-Za-z]+\]/gm;
 							var m;
@@ -267,9 +267,6 @@ class DOMDig {
 
 		return crawler;
 	}
-
-
-
 
 	async scanDom(crawler, options){
 		let timeo = setTimeout(function(){
@@ -353,24 +350,18 @@ class DOMDig {
 
 	async runDOMScan(payloads, targetUrl, isTplInj, options){
 		var cnt = 1;
-		// const onStart = new Promise(async (resolve) => {
-		// 	await this.scanDom(crawler, options);
-		// 	await this.triggerOnpaste(crawler);
-		// 	await this.close(crawler);
-		// 	resolve()
-		// })
+
 		for(let payload of payloads){
 			await this.retryScan(4, async () => {
 				this.ps(`Domscan scanning for ${isTplInj ? "Template Injection" : "DOM XSS"} with ${cnt} of ${payloads.length} payloads`);
-				const crawler = await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, !isTplInj, isTplInj,
-					// {...options, ...{customUI:(new interactiveUI(null)).customUI}});
-					options);
+				const crawler = await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, !isTplInj, isTplInj, options);
+
 				if(crawler == null)return;
 
 				await this.scanDom(crawler, options);
 				await this.triggerOnpaste(crawler);
 				await this.close(crawler);
-				// await utils.sleep(10000)
+
 				if(options.scanStored){
 					await this.scanStored(targetUrl.href, options);
 				}
@@ -408,7 +399,6 @@ class DOMDig {
 			cnt++;
 		}
 	}
-
 
 	async run() {
 		var targetUrl, cnt, crawler;
