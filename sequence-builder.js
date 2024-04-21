@@ -24,7 +24,7 @@ exports.SequenceBuilder = class {
             ...this.options,
             headlessChrome: false,
             customUI: {
-                extensionPath: __dirname + '/chrome-extension',
+                extensionPath: __dirname + '/chrome-extensions/sequence-builder',
                 UIMethods: UI => {
                     UI.selectElement = async action => {
                         const e = await UI.utils.selectElement();
