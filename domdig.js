@@ -8,7 +8,6 @@ const URL = require('url').URL;
 const Database = require('./database').Database;
 const SequenceBuilder = require('./sequence-builder').SequenceBuilder;
 const SequenceExecutor = require('./sequence-executor').SequenceExecutor;
-const interactiveUI = require('./interactive-ui').interactiveUI
 
 VERBOSE = true;
 
@@ -23,6 +22,7 @@ class DOMDig {
 		this.useSingleBrowser = false;
 		this.targetElement = null;
 		this.sequenceExecutor = null;
+		this.options = null;
 	}
 
 	getNewPayload(payload, element, info){
@@ -55,23 +55,23 @@ class DOMDig {
 		}
 	}
 
-	async loadHtcrawl(targetUrl, options){
+	async loadHtcrawl(targetUrl){
 		if(!this.defaultCrawler || !this.useSingleBrowser){
 			// instantiate htcrawl
-			this.crawler = await htcrawl.launch(targetUrl, options);
+			this.crawler = await htcrawl.launch(targetUrl, this.options);
 			this.defaultCrawler = this.crawler;
 		} else {
 			this.crawler = this.defaultCrawler;
 			// firstRun = false;
 			await this.crawler.newPage(targetUrl);
 		}
-		if(options.localStorage){
+		if(this.options.localStorage){
 			await this.crawler.page().evaluateOnNewDocument( (localStorage) => {
 				for(let l of localStorage){
 					let fn = l.type == "L" ? window.localStorage : window.sessionStorage;
 					fn.setItem(l.key, l.val);
 				}
-			}, options.localStorage);
+			}, this.options.localStorage);
 		}
 		await this.crawler.page().setCacheEnabled(false);
 		// return crawler;
@@ -121,15 +121,15 @@ class DOMDig {
 	}
 
 
-	async loadCrawler(vulntype, targetUrl, payload, setXSSSink, checkTplInj, options){
+	async loadCrawler(vulntype, targetUrl, payload, setXSSSink, checkTplInj){
 		var loaded = false;
 		// var crawler;
 		var retries = 4;
 		do{
-			await this.loadHtcrawl(targetUrl, options);
+			await this.loadHtcrawl(targetUrl);
 
 			const handleRequest = async (e, crawler) => {
-				if(options.printRequests){
+				if(this.options.printRequests){
 					utils.printRequest(e.params.request)
 				}
 				if(this.database){
@@ -190,7 +190,7 @@ class DOMDig {
 					});
 				}catch(e){}
 			});
-			if(!options.dryRun){
+			if(!this.options.dryRun){
 				if(setXSSSink){
 					this.crawler.page().exposeFunction(consts.SINKNAME, (key) => {
 						const url = this.crawler.page().url();
@@ -268,10 +268,10 @@ class DOMDig {
 		// return this.crawler;
 	}
 
-	async scanDom(options){
+	async scanDom(){
 		let timeo = setTimeout(function(){
 			this.crawler.stop();
-		}, options.maxExecTime);
+		}, this.options.maxExecTime);
 		let target = null;
 		if(this.targetElement){
 			this.ps(`Scanning ${this.targetElement}`);
@@ -279,7 +279,6 @@ class DOMDig {
 		}
 		await this.crawler.start(target);
 		clearTimeout(timeo);
-
 	}
 
 	async close(){
@@ -295,9 +294,9 @@ class DOMDig {
 
 // Must run after an XSS scan (DOM or reflected) since it just checks if a payload,
 // set by the prev scan, persists
-	async scanStored(url, options){
+	async scanStored(url){
 		this.ps("Scanning DOM for stored XSS");
-		await this.loadCrawler(consts.VULNTYPE_STORED, url, null, true, false, options);
+		await this.loadCrawler(consts.VULNTYPE_STORED, url, null, true, false);
 		if(this.crawler == null)return;
 		// disable post request since they can overwrite injected payloads
 		const cancelPostReq = function(e){return e.params.request.method == "GET"};
@@ -305,7 +304,7 @@ class DOMDig {
 		this.crawler.on("fetch", cancelPostReq);
 		// Do not fill inputs with payloads, it's just a crawling.
 		this.crawler.on("fillinput", () => true);
-		await this.scanDom(options);
+		await this.scanDom();
 		await this.triggerOnpaste();
 		await this.close();
 		this.ps("Stored XSS scan finshed");
@@ -318,10 +317,10 @@ class DOMDig {
 		}
 	}
 
-	async crawlDOM(options){
+	async crawlDOM(){
 		this.crawler.on("fillinput", () => true);
 		try{
-			await this.scanDom(options);
+			await this.scanDom();
 		}catch(e){
 
 		}
@@ -348,22 +347,22 @@ class DOMDig {
 		}
 	}
 
-	async runDOMScan(payloads, targetUrl, isTplInj, options){
+	async runDOMScan(payloads, targetUrl, isTplInj){
 		var cnt = 1;
 
 		for(let payload of payloads){
 			await this.retryScan(4, async () => {
 				this.ps(`Domscan scanning for ${isTplInj ? "Template Injection" : "DOM XSS"} with ${cnt} of ${payloads.length} payloads`);
-				await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, !isTplInj, isTplInj, options);
+				await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, !isTplInj, isTplInj);
 
 				if(this.crawler == null)return;
 
-				await this.scanDom(options);
+				await this.scanDom();
 				await this.triggerOnpaste();
 				await this.close();
 
-				if(options.scanStored){
-					await this.scanStored(targetUrl.href, options);
+				if(this.options.scanStored){
+					await this.scanStored(targetUrl.href);
 				}
 				this.ps(cnt + "/" + payloads.length + " payloads checked");
 				cnt++;
@@ -371,7 +370,7 @@ class DOMDig {
 		}
 	}
 
-	async runFuzzer(payloads, targetUrl, isTplInj, options){
+	async runFuzzer(payloads, targetUrl, isTplInj){
 		var cnt = 1;
 		for(let payload of payloads){
 			this.ps(`Fuzzer scanning for ${isTplInj ? "Template Injection" : "DOM XSS"} with ${cnt} of ${payloads.length} payloads`);
@@ -379,19 +378,19 @@ class DOMDig {
 				await this.retryScan(4, async () => {
 
 					let totv = this.vulnsjar.length;
-					await this.loadCrawler(consts.VULNTYPE_DOM, mutUrl.href, payload, !isTplInj, isTplInj, options);
+					await this.loadCrawler(consts.VULNTYPE_DOM, mutUrl.href, payload, !isTplInj, isTplInj);
 					if(this.crawler == null)return;
 					// If, after load, a new vuln is found (this.vulnsjar.length increased), then the DOM scan can be skipped.
 					if(totv == this.vulnsjar.length) {
 						// Do not fill inputs with payloads, it's just a crawling.
 						this.crawler.on("fillinput", () => true);
-						await this.scanDom(options);
+						await this.scanDom();
 					}
 					await this.triggerOnpaste();
 					await this.close();
 
-					if(options.scanStored){
-						await this.scanStored(targetUrl.href, options);
+					if(this.options.scanStored){
+						await this.scanStored(targetUrl.href);
 					}
 					this.ps(cnt + "/" + payloads.length + " payloads checked (URL mutation: " + utils.replaceSinkName(mutUrl.href) + ")");
 				});
@@ -400,8 +399,52 @@ class DOMDig {
 		}
 	}
 
+	async startScan(targetUrl, payloads, modes, argv) {
+		this.ps(`Starting scan\n    modes: ${modes.join(",")}  scan stored: ${this.options.scanStored ? "yes" : "no"}   check template injection: ${this.options.checkTemplateInj ? "yes" : "no"}`);
+		if(this.options.dryRun){
+			// Crawl the DOM with all sinks enabled
+			modes = allModes;
+			await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, "payload", true, true);
+			if(this.crawler == null){
+				throw("Error loading crawler");
+			};
+			if(VERBOSE)utils.printInfo("Running in dry-run mode, no payloads will be used");
+			await this.crawlDOM();
+		}else {
+			if(modes.indexOf(consts.MODE_DOMSCAN) != -1){
+				await this.runDOMScan(payloads, targetUrl, false);
+				if(this.options.checkTemplateInj){
+					await this.runDOMScan(defpayloads.templateinj, targetUrl, true);
+				}
+			}
+
+			if(modes.indexOf(consts.MODE_FUZZ) != -1){
+				await this.runFuzzer(payloads, targetUrl, false);
+				if(this.options.checkTemplateInj){
+					await this.runFuzzer(defpayloads.templateinj, targetUrl, true);
+				}
+			}
+		}
+		if(VERBOSE)console.log("");
+		this.ps("Scan finished, tot vulnerabilities: " + this.vulnsjar.length, true);
+
+		if(argv.J){
+			console.log(utils.prettifyJson(this.vulnsjar));
+		} else if(VERBOSE){
+			for(let v of this.vulnsjar){
+				utils.printVulnerability(v);
+			}
+		}
+
+		if(argv.o){
+			let fn = utils.writeJSON(argv.o, this.vulnsjar);
+			this.ps("Findings saved to " + fn)
+		}
+		process.exit(0);
+	}
+
 	async run() {
-		var targetUrl, cnt, crawler;
+		var targetUrl;
 		const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "B", "S", "O"]});
 		if(argv.q)VERBOSE = false;
 		if(VERBOSE)utils.banner();
@@ -420,6 +463,7 @@ class DOMDig {
 			utils.error(e);
 		}
 		const {options, settings} = utils.parseArgs(argv, targetUrl);
+		this.options = options;
 		if(argv.m){
 			settings.push(["-m", argv.m])
 		}
@@ -488,10 +532,10 @@ class DOMDig {
 			try{
 				this.sequenceExecutor = new SequenceExecutor(options.initSequence, status => this.ps(status));
 				if(this.sequenceExecutor.sequence.start.length > 0){
-					const seqCrawler = await this.loadHtcrawl(targetUrl.href, options);
-					await seqCrawler.load();
-					await this.sequenceExecutor.run(seqCrawler, "start");
-					await seqCrawler.page().close();
+					await this.loadHtcrawl(targetUrl.href);
+					await this.crawler.load();
+					await this.sequenceExecutor.run(this.crawler, "start");
+					await this.crawler.page().close();
 				}
 			}catch(e){
 				if(this.database){
@@ -502,48 +546,7 @@ class DOMDig {
 			}
 		}
 
-		this.ps(`Starting scan\n    modes: ${modes.join(",")}  scan stored: ${options.scanStored ? "yes" : "no"}   check template injection: ${options.checkTemplateInj ? "yes" : "no"}`);
-
-		if(options.dryRun){
-			// Crawl the DOM with all sinks enabled
-			modes = allModes;
-			await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, "payload", true, true, options);
-			if(this.crawler == null){
-				throw("Error loading crawler");
-			};
-			if(VERBOSE)utils.printInfo("Running in dry-run mode, no payloads will be used");
-			await this.crawlDOM(options);
-		}else {
-			if(modes.indexOf(consts.MODE_DOMSCAN) != -1){
-				await this.runDOMScan(payloads, targetUrl, false, options);
-				if(options.checkTemplateInj){
-					await this.runDOMScan(defpayloads.templateinj, targetUrl, true, options);
-				}
-			}
-
-			if(modes.indexOf(consts.MODE_FUZZ) != -1){
-				await this.runFuzzer(payloads, targetUrl, false, options);
-				if(options.checkTemplateInj){
-					await this.runFuzzer(defpayloads.templateinj, targetUrl, true, options);
-				}
-			}
-		}
-		if(VERBOSE)console.log("");
-		this.ps("Scan finished, tot vulnerabilities: " + this.vulnsjar.length, true);
-
-		if(argv.J){
-			console.log(utils.prettifyJson(this.vulnsjar));
-		} else if(VERBOSE){
-			for(let v of this.vulnsjar){
-				utils.printVulnerability(v);
-			}
-		}
-
-		if(argv.o){
-			let fn = utils.writeJSON(argv.o, this.vulnsjar);
-			this.ps("Findings saved to " + fn)
-		}
-		process.exit(0);
+		await this.startScan(targetUrl, payloads, modes, argv)
 	}
 }
 

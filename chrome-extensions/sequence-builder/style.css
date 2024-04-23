@@ -1,0 +1,234 @@
+
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f9;
+  }
+
+.flex-end {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.header {
+  background-color: #6a1b9a;
+  color: #fff;
+  padding: 10px 20px;
+}
+
+.container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100% - 140px);
+  padding: 20px;
+}
+
+.button-container {
+  margin-bottom: 40px;
+}
+
+button {
+  background-color: #9c27b0;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  margin-right: 10px;
+  margin-bottom: 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+  font-size: 14px;
+  flex: 0;
+}
+
+button:hover {
+  background-color: #7b1fa2;
+}
+
+
+.sequence-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.sequence-table th, .sequence-table td {
+  border: 1px solid #ddd;
+  padding: 8px;
+  vertical-align: top;
+}
+
+.sequence-table tr:nth-child(odd) {
+  background-color: #f2f2f2;
+}
+
+.sequence-table tbody tr:hover {
+  background-color: #ddd;
+}
+
+.sequence-table td:nth-child(2), .sequence-table th:nth-child(2) {
+  width: 100%;
+}
+
+.sequence-table td:nth-child(1), .sequence-table th:nth-child(1) {
+  min-width: 150px;
+}
+
+.sequence-table td:nth-child(3) {
+  vertical-align: middle;
+}
+
+
+.delete-btn {
+  background-color: red;
+  font-size: 14px;
+}
+
+input[type="text"], input[type="number"] {
+  width: 100%;
+  padding: 8px;
+  margin: 4px 0;
+  box-sizing: border-box;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+select {
+  width: 100%;
+  min-width: 130px;
+  padding: 8px;
+  margin: 4px 0;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  box-sizing: border-box;
+  -webkit-appearance: none;
+  appearance: none;
+  background-color: white;
+  cursor: pointer;
+  position: relative;
+  background-image: url('data:image/svg+xml;charset=US-ASCII,<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg"><path d="M6 9L1.5 3h9L6 9z" fill="%23888"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+}
+
+select:hover {
+  border-color: #bbb;
+}
+
+select:focus {
+  outline: none;
+  border-color: #666;
+}
+
+#selectModal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+#selectModal div {
+  color: white;
+  font-size: 24px;
+  text-align: center;
+}
+
+.dropdown {
+  position: relative;
+  display: inline-block;
+  margin-right: 30px;
+  margin-top: 20px;
+  min-width: 120px;
+}
+
+.dropdown-toggle {
+  padding: 10px;
+  font-size: 14px;
+  background-color: #9c27b0;
+  border-radius: 5px;
+  color: white;
+  cursor: pointer;
+  position: relative;
+  background-image: url('data:image/svg+xml;charset=US-ASCII,<svg width="12" height="12" viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg"><path d="M6 9L1.5 3h9L6 9z" fill="white"/></svg>');
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  width: 100%;
+  user-select: none;
+}
+
+
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  background-color: #9c27b0;
+  color: white;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+  z-index: 999;
+  width: calc(100% + 20px);
+  padding-top:10px;
+  margin-top: -10px;
+}
+
+.dropdown-menu .dropdown-item {
+  padding: 10px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+.dropdown-menu, .dropdown-item:last-child {
+  border-bottom-left-radius: 5px;
+  border-bottom-right-radius: 5px;
+}
+.dropdown-menu .dropdown-item:hover {
+  background-color: #7b1fa2;
+}
+
+
+.tab-button {
+  background-color: #9c27b0;
+  color: #ffffffaa;
+  border: none;
+  margin-right: -1px;
+  position: relative;
+  top: 1px;
+  border-radius: 8px 8px 0 0;
+  padding: 10px 20px;
+  cursor: pointer;
+  font-size: 12px;
+  margin-bottom: 0;
+}
+
+.tab-button.tab-active, .tab-button:hover {
+  background-color: #7b1fa2;
+  z-index: 1;
+}
+.tab-button.tab-active {
+  font-size: 14px;
+  color:white;
+}
+
+.tab-button-container {
+  background-color: #f4f4f9;
+  border-bottom: 1px solid #7b1fa2;
+  padding: 0;
+}
+
+.tab-content {
+  border: 1px solid  #7b1fa2;
+  border-top: none;
+  padding: 20px;
+  display: none;
+}
+
+.tab-content-active {
+  display: block;
+}

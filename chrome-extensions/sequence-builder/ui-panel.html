@@ -1,0 +1,78 @@
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="style.css"> 
+</head>
+<body>
+
+<div class="header">
+  <h1>DOMDIG Sequence Builder</h1>
+</div>
+
+<div class="container">
+  <div class="button-container">
+    <div class="dropdown">
+      <div class="dropdown-toggle">Add Element's Action</div>
+      <div class="dropdown-menu">
+          <div class="dropdown-item" id="add-action-write">Write</div>
+          <div class="dropdown-item" id="add-action-select">Select</div>
+          <div class="dropdown-item" id="add-action-click">Click</div>
+          <div class="dropdown-item" id="add-action-click-to-navigate">Click to Navigate</div>
+          <div class="dropdown-item" id="add-action-set-target">Set Target</div>
+      </div>
+    </div>
+    <div class="dropdown">
+      <div class="dropdown-toggle">Add Action</div>
+      <div class="dropdown-menu">
+          <div class="dropdown-item" id="add-action-sleep">Sleep</div>
+          <div class="dropdown-item"id="add-action-navigate">Navigate</div>
+      </div>
+    </div>
+    <div class="dropdown">
+      <div class="dropdown-toggle">Finish</div>
+      <div class="dropdown-menu">
+          <div class="dropdown-item"id="finish-and-scan">Save and Scan</div>
+          <div class="dropdown-item" id="finish">Save and Exit</div>
+          <div class="dropdown-item" id="finish-discart">Discart and Exit</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="tab-button-container">
+        <button class="tab-button tab-active" data-for="tab-start">Login Sequence</button>
+        <button class="tab-button" data-for="tab-runtime">Runtime Sequence</button>
+    </div>
+    <div class="tab-content tab-content-active" data-tab-name="tab-start">
+      <table class="sequence-table" id="sequence-table-start">
+        <thead>
+            <tr>
+                <th>Action</th>
+                <th>Parameters</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="tab-content" data-tab-name="tab-runtime"">
+      <table class="sequence-table" id="sequence-table-runtime">
+        <thead>
+            <tr>
+                <th>Action</th>
+                <th>Parameters</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+</div>
+
+
+
+</div>
+<script src="utils.js"></script>
+<script src="ui-panel.js"></script>
+</body>
+</html>
