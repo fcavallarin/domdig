@@ -18,6 +18,7 @@ class DOMDig {
 		this.payloadmap_i = 0;
 		this.vulnsjar = [];
 		this.database = null;
+		this.defaultCrawler = null;
 		this.crawler = null;
 		this.useSingleBrowser = false;
 		this.targetElement = null;
@@ -43,8 +44,8 @@ class DOMDig {
 		return muts;
 	}
 
-	async triggerOnpaste(crawler){
-		const elems = await crawler.page().$$('[onpaste]');
+	async triggerOnpaste(){
+		const elems = await this.crawler.page().$$('[onpaste]');
 		for(let e of elems){
 			await e.evaluate(i => {
 				var evt = document.createEvent('HTMLEvents');
@@ -55,26 +56,25 @@ class DOMDig {
 	}
 
 	async loadHtcrawl(targetUrl, options){
-		let crawler
-		if(!this.crawler || !this.useSingleBrowser){
+		if(!this.defaultCrawler || !this.useSingleBrowser){
 			// instantiate htcrawl
-			crawler = await htcrawl.launch(targetUrl, options);
-			this.crawler = crawler;
+			this.crawler = await htcrawl.launch(targetUrl, options);
+			this.defaultCrawler = this.crawler;
 		} else {
-			crawler = this.crawler;
+			this.crawler = this.defaultCrawler;
 			// firstRun = false;
-			await crawler.newPage(targetUrl);
+			await this.crawler.newPage(targetUrl);
 		}
 		if(options.localStorage){
-			await crawler.page().evaluateOnNewDocument( (localStorage) => {
+			await this.crawler.page().evaluateOnNewDocument( (localStorage) => {
 				for(let l of localStorage){
 					let fn = l.type == "L" ? window.localStorage : window.sessionStorage;
 					fn.setItem(l.key, l.val);
 				}
 			}, options.localStorage);
 		}
-		await crawler.page().setCacheEnabled(false);
-		return crawler;
+		await this.crawler.page().setCacheEnabled(false);
+		// return crawler;
 	}
 
 	fuzzObject(obj, payload) {
@@ -123,10 +123,10 @@ class DOMDig {
 
 	async loadCrawler(vulntype, targetUrl, payload, setXSSSink, checkTplInj, options){
 		var loaded = false;
-		var crawler;
+		// var crawler;
 		var retries = 4;
 		do{
-			crawler = await this.loadHtcrawl(targetUrl, options);
+			await this.loadHtcrawl(targetUrl, options);
 
 			const handleRequest = async (e, crawler) => {
 				if(options.printRequests){
@@ -137,13 +137,13 @@ class DOMDig {
 				}
 				return true;
 			};
-			crawler.on("xhr", handleRequest);
-			crawler.on("fetch", handleRequest);
-			crawler.on("navigation", handleRequest);
-			crawler.on("jsonp", handleRequest);
-			crawler.on("websocket", handleRequest);
+			this.crawler.on("xhr", handleRequest);
+			this.crawler.on("fetch", handleRequest);
+			this.crawler.on("navigation", handleRequest);
+			this.crawler.on("jsonp", handleRequest);
+			this.crawler.on("websocket", handleRequest);
 
-			crawler.page().exposeFunction("__domdig_on_postmessage__", async (message, origin, url) => {
+			this.crawler.page().exposeFunction("__domdig_on_postmessage__", async (message, origin, url) => {
 				// console.log(message, origin)
 				if(this.isFuzzObject(message)){
 					return;
@@ -151,7 +151,7 @@ class DOMDig {
 				const p = this.getNewPayload(payload, `postMessage/${origin}`)
 				const fuzzMessages = this.fuzzObject(message, p);
 
-				const frames = await crawler.page().frames();
+				const frames = await this.crawler.page().frames();
 				let src;
 				for(const frame of frames){
 					// console.log(frame.url())
@@ -176,12 +176,12 @@ class DOMDig {
 					}
 				}, url, fuzzMessages);
 			})
-			crawler.page().evaluateOnNewDocument(() => {
+			this.crawler.page().evaluateOnNewDocument(() => {
 				window.addEventListener("message", async event => {
 					await window.__domdig_on_postmessage__(event.data, event.origin, `${document.location}`);
 				});
 			});
-			crawler.page().on("frameattached", async frame => {
+			this.crawler.page().on("frameattached", async frame => {
 				try{
 					await frame.evaluate(() => {
 						window.addEventListener("message", async event => {
@@ -192,8 +192,8 @@ class DOMDig {
 			});
 			if(!options.dryRun){
 				if(setXSSSink){
-					crawler.page().exposeFunction(consts.SINKNAME, (key) => {
-						const url = crawler.page().url();
+					this.crawler.page().exposeFunction(consts.SINKNAME, (key) => {
+						const url = this.crawler.page().url();
 						var confirmed = true;
 						// When searching for DOM XSS, we need to check if the current URL has changed and contais our payload.
 						if(vulntype == consts.VULNTYPE_DOM){
@@ -205,7 +205,7 @@ class DOMDig {
 
 				if(payload != null){
 					// fill all inputs with a payload
-					crawler.on("fillinput", async (e, crawler) => {
+					this.crawler.on("fillinput", async (e, crawler) => {
 						const p = this.getNewPayload(payload, e.params.element);
 						try{
 							await crawler.page().$eval(e.params.element, (i, p) => i.value = p, p);
@@ -222,7 +222,7 @@ class DOMDig {
 					});
 
 					if(checkTplInj){
-						crawler.on("eventtriggered", async (e, crawler) => {
+						this.crawler.on("eventtriggered", async (e, crawler) => {
 							var cont = await crawler.page().content();
 							var re = /\[object [A-Za-z]+\]([0-9]+)\[object [A-Za-z]+\]/gm;
 							var m;
@@ -236,11 +236,11 @@ class DOMDig {
 			}
 
 			try{
-				await crawler.load();
+				await this.crawler.load();
 				loaded = true;
 			} catch(e){
 				try{
-					await this.close(crawler);
+					await this.close();
 				} catch(e1){}
 				utils.printError(`${e}`);
 				if(retries > 0){
@@ -255,7 +255,7 @@ class DOMDig {
 
 		if(this.sequenceExecutor){
 			try{
-				await this.sequenceExecutor.run(crawler, "runtime");
+				await this.sequenceExecutor.run(this.crawler, "runtime");
 			}catch(e){
 				if(this.database){
 					this.database.updateStatus(`${e}`, true);
@@ -265,30 +265,30 @@ class DOMDig {
 			}
 		}
 
-		return crawler;
+		// return this.crawler;
 	}
 
-	async scanDom(crawler, options){
+	async scanDom(options){
 		let timeo = setTimeout(function(){
-			crawler.stop();
+			this.crawler.stop();
 		}, options.maxExecTime);
 		let target = null;
 		if(this.targetElement){
 			this.ps(`Scanning ${this.targetElement}`);
-			target = await crawler.page().$(this.targetElement);
+			target = await this.crawler.page().$(this.targetElement);
 		}
-		await crawler.start(target);
+		await this.crawler.start(target);
 		clearTimeout(timeo);
 
 	}
 
-	async close(crawler){
+	async close(){
 		await utils.sleep(200);
 		try{
 			if(this.useSingleBrowser){
-				await crawler.page().close();
+				await this.crawler.page().close();
 			}else {
-				await crawler.browser().close();
+				await this.crawler.browser().close();
 			}
 		}catch(e){}
 	}
@@ -297,17 +297,17 @@ class DOMDig {
 // set by the prev scan, persists
 	async scanStored(url, options){
 		this.ps("Scanning DOM for stored XSS");
-		const crawler = await this.loadCrawler(consts.VULNTYPE_STORED, url, null, true, false, options);
-		if(crawler == null)return;
+		await this.loadCrawler(consts.VULNTYPE_STORED, url, null, true, false, options);
+		if(this.crawler == null)return;
 		// disable post request since they can overwrite injected payloads
 		const cancelPostReq = function(e){return e.params.request.method == "GET"};
-		crawler.on("xhr", cancelPostReq);
-		crawler.on("fetch", cancelPostReq);
+		this.crawler.on("xhr", cancelPostReq);
+		this.crawler.on("fetch", cancelPostReq);
 		// Do not fill inputs with payloads, it's just a crawling.
-		crawler.on("fillinput", () => true);
-		await this.scanDom(crawler, options);
-		await this.triggerOnpaste(crawler);
-		await this.close(crawler);
+		this.crawler.on("fillinput", () => true);
+		await this.scanDom(options);
+		await this.triggerOnpaste();
+		await this.close();
 		this.ps("Stored XSS scan finshed");
 	}
 
@@ -318,10 +318,10 @@ class DOMDig {
 		}
 	}
 
-	async crawlDOM(crawler, options){
-		crawler.on("fillinput", () => true);
+	async crawlDOM(options){
+		this.crawler.on("fillinput", () => true);
 		try{
-			await this.scanDom(crawler, options);
+			await this.scanDom(options);
 		}catch(e){
 
 		}
@@ -334,11 +334,11 @@ class DOMDig {
 		} catch(ex){
 			if(retries > 0){
 				retries--;
-				if(this.crawler){
+				if(this.defaultCrawler){
 					try{
-						await this.crawler.browser().close();
+						await this.defaultCrawler.browser().close();
 					}catch(e){}
-					this.crawler = null;
+					this.defaultCrawler = null;
 				}
 				utils.printWarning("Unexpected error, retrying..." + ex);
 				continue;
@@ -354,13 +354,13 @@ class DOMDig {
 		for(let payload of payloads){
 			await this.retryScan(4, async () => {
 				this.ps(`Domscan scanning for ${isTplInj ? "Template Injection" : "DOM XSS"} with ${cnt} of ${payloads.length} payloads`);
-				const crawler = await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, !isTplInj, isTplInj, options);
+				await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, payload, !isTplInj, isTplInj, options);
 
-				if(crawler == null)return;
+				if(this.crawler == null)return;
 
-				await this.scanDom(crawler, options);
-				await this.triggerOnpaste(crawler);
-				await this.close(crawler);
+				await this.scanDom(options);
+				await this.triggerOnpaste();
+				await this.close();
 
 				if(options.scanStored){
 					await this.scanStored(targetUrl.href, options);
@@ -379,16 +379,16 @@ class DOMDig {
 				await this.retryScan(4, async () => {
 
 					let totv = this.vulnsjar.length;
-					const crawler = await this.loadCrawler(consts.VULNTYPE_DOM, mutUrl.href, payload, !isTplInj, isTplInj, options);
-					if(crawler == null)return;
+					await this.loadCrawler(consts.VULNTYPE_DOM, mutUrl.href, payload, !isTplInj, isTplInj, options);
+					if(this.crawler == null)return;
 					// If, after load, a new vuln is found (this.vulnsjar.length increased), then the DOM scan can be skipped.
 					if(totv == this.vulnsjar.length) {
 						// Do not fill inputs with payloads, it's just a crawling.
-						crawler.on("fillinput", () => true);
-						await this.scanDom(crawler, options);
+						this.crawler.on("fillinput", () => true);
+						await this.scanDom(options);
 					}
-					await this.triggerOnpaste(crawler);
-					await this.close(crawler);
+					await this.triggerOnpaste();
+					await this.close();
 
 					if(options.scanStored){
 						await this.scanStored(targetUrl.href, options);
@@ -507,12 +507,12 @@ class DOMDig {
 		if(options.dryRun){
 			// Crawl the DOM with all sinks enabled
 			modes = allModes;
-			const crawler = await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, "payload", true, true, options);
-			if(crawler == null){
+			await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, "payload", true, true, options);
+			if(this.crawler == null){
 				throw("Error loading crawler");
 			};
 			if(VERBOSE)utils.printInfo("Running in dry-run mode, no payloads will be used");
-			await this.crawlDOM(crawler, options);
+			await this.crawlDOM(options);
 		}else {
 			if(modes.indexOf(consts.MODE_DOMSCAN) != -1){
 				await this.runDOMScan(payloads, targetUrl, false, options);
