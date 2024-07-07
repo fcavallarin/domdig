@@ -177,12 +177,10 @@ function usage(){
 		"   -s SEQUENCE|PATH  set initial sequence (JSON)",
 		"                     If PATH is a valid readable file,",
 		"                     SEQUENCE is read from that file",
-		"   -o PATH           save findings to a JSON file",
 		"   -J                print findings as JSON",
 		"   -q                quiet mode",
 		"   -P PATH           load payloads from file (JSON)",
 		"   -X REGEX          regular expression to eXclude urls (ex -X'.*logout.*' -X'.*signout.*')",
-		// "   -C CHECKS         comma-separated list of checks: dom,reflected,stored (default: all)",
 		"   -m MODES          comma-separated list of scan modes: domscan,fuzz (default: all)",
 		"                        domscan  crawl the DOM injecting payloads into input values",
 		"                        fuzz     fuzz the URL (query params and hash) with XSS payloads",
@@ -192,7 +190,6 @@ function usage(){
 		"   -d FILE_NAME      save all the results to a SQLite3 database",
 		"   -r                print all XHR/fetch and websocket requests triggered while scanning",
 		"   -D                dry-run, do not use any payload, just crawl the page",
-		"   -B                restart the browser every new payload",
 		"   -L FILE_NAME      run the Sequence Builder and save the sequnce to file",
 		"   -O                do not crawl non same-origin frames",
 		"   -h                this help"
@@ -362,12 +359,6 @@ function parseArgs(args, url, database){
 				break;
 			case "D":
 				options.dryRun = args[arg];
-				if(args[arg]){
-					settings.push([`-${arg}`, null]);
-				}
-				break;
-			case "B":
-				options.singleBrowser = !args[arg];
 				if(args[arg]){
 					settings.push([`-${arg}`, null]);
 				}

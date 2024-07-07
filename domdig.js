@@ -17,9 +17,7 @@ class DOMDig {
 		this.payloadmap_i = 0;
 		this.vulnsjar = [];
 		this.database = null;
-		this.defaultCrawler = null;
 		this.crawler = null;
-		this.useSingleBrowser = false;
 		this.targetElement = null;
 		this.sequenceExecutor = null;
 		this.options = null;
@@ -56,13 +54,10 @@ class DOMDig {
 	}
 
 	async loadHtcrawl(targetUrl){
-		if(!this.defaultCrawler || !this.useSingleBrowser){
+		if(!this.crawler){
 			// instantiate htcrawl
 			this.crawler = await htcrawl.launch(targetUrl, this.options);
-			this.defaultCrawler = this.crawler;
 		} else {
-			this.crawler = this.defaultCrawler;
-			// firstRun = false;
 			await this.crawler.newPage(targetUrl);
 		}
 		if(this.options.localStorage){
@@ -264,8 +259,6 @@ class DOMDig {
 				return null;
 			}
 		}
-
-		// return this.crawler;
 	}
 
 	async scanDom(){
@@ -284,11 +277,7 @@ class DOMDig {
 	async close(){
 		await utils.sleep(200);
 		try{
-			if(this.useSingleBrowser){
-				await this.crawler.page().close();
-			}else {
-				await this.crawler.browser().close();
-			}
+			await this.crawler.page().close();
 		}catch(e){}
 	}
 
@@ -333,12 +322,9 @@ class DOMDig {
 		} catch(ex){
 			if(retries > 0){
 				retries--;
-				if(this.defaultCrawler){
-					try{
-						await this.defaultCrawler.browser().close();
-					}catch(e){}
-					this.defaultCrawler = null;
-				}
+				try{
+					await this.crawler.page().close();
+				}catch(e){}
 				utils.printWarning("Unexpected error, retrying..." + ex);
 				continue;
 			} else {
@@ -399,7 +385,7 @@ class DOMDig {
 		}
 	}
 
-	async startScan(targetUrl, payloads, modes, argv) {
+	async startScan(targetUrl, payloads, modes, printJson) {
 		this.ps(`Starting scan\n    modes: ${modes.join(",")}  scan stored: ${this.options.scanStored ? "yes" : "no"}   check template injection: ${this.options.checkTemplateInj ? "yes" : "no"}`);
 		if(this.options.dryRun){
 			// Crawl the DOM with all sinks enabled
@@ -428,7 +414,7 @@ class DOMDig {
 		if(VERBOSE)console.log("");
 		this.ps("Scan finished, tot vulnerabilities: " + this.vulnsjar.length, true);
 
-		if(argv.J){
+		if(printJson){
 			console.log(utils.prettifyJson(this.vulnsjar));
 		} else if(VERBOSE){
 			for(let v of this.vulnsjar){
@@ -436,16 +422,14 @@ class DOMDig {
 			}
 		}
 
-		if(argv.o){
-			let fn = utils.writeJSON(argv.o, this.vulnsjar);
-			this.ps("Findings saved to " + fn)
-		}
 		process.exit(0);
 	}
 
 	async run() {
 		var targetUrl;
-		const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "B", "S", "O"]});
+		const argv = require('minimist')(process.argv.slice(2), {
+			boolean:["l", "J", "q", "T", "D", "r", "S", "O"]
+		});
 		if(argv.q)VERBOSE = false;
 		if(VERBOSE)utils.banner();
 		if('h' in argv){
@@ -493,10 +477,6 @@ class DOMDig {
 		}
 		var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads.xss;
 
-		if(options.singleBrowser){
-			this.useSingleBrowser = true;
-		}
-
 		const sigHandler = () => {
 			console.log("Terminating...");
 			process.exit(0);
@@ -533,7 +513,7 @@ class DOMDig {
 				this.sequenceExecutor = new SequenceExecutor(options.initSequence, status => this.ps(status));
 				if(this.sequenceExecutor.sequence.start.length > 0){
 					await this.loadHtcrawl(targetUrl.href);
-					await this.crawler.load();
+					// await this.crawler.load();
 					await this.sequenceExecutor.run(this.crawler, "start");
 					await this.crawler.page().close();
 				}
@@ -546,7 +526,7 @@ class DOMDig {
 			}
 		}
 
-		await this.startScan(targetUrl, payloads, modes, argv)
+		await this.startScan(targetUrl, payloads, modes, argv.J)
 	}
 }
 
