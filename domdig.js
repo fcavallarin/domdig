@@ -385,7 +385,7 @@ class DOMDig {
 		}
 	}
 
-	async startScan(targetUrl, payloads, modes, argv) {
+	async startScan(targetUrl, payloads, modes, printJson) {
 		this.ps(`Starting scan\n    modes: ${modes.join(",")}  scan stored: ${this.options.scanStored ? "yes" : "no"}   check template injection: ${this.options.checkTemplateInj ? "yes" : "no"}`);
 		if(this.options.dryRun){
 			// Crawl the DOM with all sinks enabled
@@ -414,7 +414,7 @@ class DOMDig {
 		if(VERBOSE)console.log("");
 		this.ps("Scan finished, tot vulnerabilities: " + this.vulnsjar.length, true);
 
-		if(argv.J){
+		if(printJson){
 			console.log(utils.prettifyJson(this.vulnsjar));
 		} else if(VERBOSE){
 			for(let v of this.vulnsjar){
@@ -422,16 +422,14 @@ class DOMDig {
 			}
 		}
 
-		if(argv.o){
-			let fn = utils.writeJSON(argv.o, this.vulnsjar);
-			this.ps("Findings saved to " + fn)
-		}
 		process.exit(0);
 	}
 
 	async run() {
 		var targetUrl;
-		const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "S", "O"]});
+		const argv = require('minimist')(process.argv.slice(2), {
+			boolean:["l", "J", "q", "T", "D", "r", "S", "O"]
+		});
 		if(argv.q)VERBOSE = false;
 		if(VERBOSE)utils.banner();
 		if('h' in argv){
@@ -515,7 +513,7 @@ class DOMDig {
 				this.sequenceExecutor = new SequenceExecutor(options.initSequence, status => this.ps(status));
 				if(this.sequenceExecutor.sequence.start.length > 0){
 					await this.loadHtcrawl(targetUrl.href);
-					await this.crawler.load();
+					// await this.crawler.load();
 					await this.sequenceExecutor.run(this.crawler, "start");
 					await this.crawler.page().close();
 				}
@@ -528,7 +526,7 @@ class DOMDig {
 			}
 		}
 
-		await this.startScan(targetUrl, payloads, modes, argv)
+		await this.startScan(targetUrl, payloads, modes, argv.J)
 	}
 }
 
