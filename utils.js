@@ -192,6 +192,7 @@ function usage(){
 		"   -D                dry-run, do not use any payload, just crawl the page",
 		"   -L FILE_NAME      run the Sequence Builder and save the sequnce to file",
 		"   -O                do not crawl non same-origin frames",
+		"   -i                interactive mode",
 		"   -h                this help"
 	].join("\n"));
 }
@@ -383,6 +384,18 @@ function parseArgs(args, url, database){
 				break;
 			case "O":
 				options.includeAllOrigins = !args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
+				break;
+			case "i":
+				options.interactiveUI = args[arg];
+				if(args[arg]){
+					settings.push([`-${arg}`, null]);
+				}
+				break;
+			case "J":
+				options.printJson = args[arg];
 				if(args[arg]){
 					settings.push([`-${arg}`, null]);
 				}

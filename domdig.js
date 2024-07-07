@@ -8,6 +8,7 @@ const URL = require('url').URL;
 const Database = require('./database').Database;
 const SequenceBuilder = require('./sequence-builder').SequenceBuilder;
 const SequenceExecutor = require('./sequence-executor').SequenceExecutor;
+const InteractiveUI = require('./interactive-ui').InteractiveUI;
 
 VERBOSE = true;
 
@@ -21,6 +22,9 @@ class DOMDig {
 		this.targetElement = null;
 		this.sequenceExecutor = null;
 		this.options = null;
+		this.targetUrl = null;
+		this.payloads = null;
+		this.modes = null;
 	}
 
 	getNewPayload(payload, element, info){
@@ -385,12 +389,13 @@ class DOMDig {
 		}
 	}
 
-	async startScan(targetUrl, payloads, modes, printJson) {
+	async startScan() {
+		let modes = this.modes;
 		this.ps(`Starting scan\n    modes: ${modes.join(",")}  scan stored: ${this.options.scanStored ? "yes" : "no"}   check template injection: ${this.options.checkTemplateInj ? "yes" : "no"}`);
 		if(this.options.dryRun){
 			// Crawl the DOM with all sinks enabled
 			modes = allModes;
-			await this.loadCrawler(consts.VULNTYPE_DOM, targetUrl.href, "payload", true, true);
+			await this.loadCrawler(consts.VULNTYPE_DOM, this.targetUrl.href, "payload", true, true);
 			if(this.crawler == null){
 				throw("Error loading crawler");
 			};
@@ -398,23 +403,23 @@ class DOMDig {
 			await this.crawlDOM();
 		}else {
 			if(modes.indexOf(consts.MODE_DOMSCAN) != -1){
-				await this.runDOMScan(payloads, targetUrl, false);
+				await this.runDOMScan(this.payloads, this.targetUrl, false);
 				if(this.options.checkTemplateInj){
-					await this.runDOMScan(defpayloads.templateinj, targetUrl, true);
+					await this.runDOMScan(defpayloads.templateinj, this.targetUrl, true);
 				}
 			}
 
 			if(modes.indexOf(consts.MODE_FUZZ) != -1){
-				await this.runFuzzer(payloads, targetUrl, false);
+				await this.runFuzzer(this.payloads, this.targetUrl, false);
 				if(this.options.checkTemplateInj){
-					await this.runFuzzer(defpayloads.templateinj, targetUrl, true);
+					await this.runFuzzer(defpayloads.templateinj, this.targetUrl, true);
 				}
 			}
 		}
 		if(VERBOSE)console.log("");
 		this.ps("Scan finished, tot vulnerabilities: " + this.vulnsjar.length, true);
 
-		if(printJson){
+		if(this.options.printJson){
 			console.log(utils.prettifyJson(this.vulnsjar));
 		} else if(VERBOSE){
 			for(let v of this.vulnsjar){
@@ -426,9 +431,8 @@ class DOMDig {
 	}
 
 	async run() {
-		var targetUrl;
 		const argv = require('minimist')(process.argv.slice(2), {
-			boolean:["l", "J", "q", "T", "D", "r", "S", "O"]
+			boolean:["l", "J", "q", "T", "D", "r", "S", "O", "i"]
 		});
 		if(argv.q)VERBOSE = false;
 		if(VERBOSE)utils.banner();
@@ -442,16 +446,16 @@ class DOMDig {
 		}
 
 		try{
-			targetUrl = new URL(argv._[0]);
+			this.targetUrl = new URL(argv._[0]);
 		} catch(e){
 			utils.error(e);
 		}
-		const {options, settings} = utils.parseArgs(argv, targetUrl);
+		const {options, settings} = utils.parseArgs(argv, this.targetUrl);
 		this.options = options;
 		if(argv.m){
 			settings.push(["-m", argv.m])
 		}
-		settings.push([null, targetUrl.href]);
+		settings.push([null, this.targetUrl.href]);
 		options.crawlmode = "random";
 		if(options.databaseFileName){
 			if(fs.existsSync(options.databaseFileName)){
@@ -464,18 +468,15 @@ class DOMDig {
 		}
 		if(!options.maxExecTime) options.maxExecTime = consts.DEF_MAXEXECTIME;
 		const allModes = [consts.MODE_DOMSCAN, consts.MODE_FUZZ];
-		var modes = argv.m ?  argv.m.split(",") : allModes;
-		for(let mode of modes){
+		this.modes = argv.m ?  argv.m.split(",") : allModes;
+		for(let mode of this.modes){
 			if(allModes.indexOf(mode) == -1){
 				utils.error(`Mode "${mode}" not found. Modes are: ${allModes.join(",")}.`);
 				process.exit(1);
 			}
 		}
-		if(argv.C){
-			utils.error("-C option is deprecated. See -T -S and -m");
-			process.exit(1);
-		}
-		var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads.xss;
+
+		this.payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads.xss;
 
 		const sigHandler = () => {
 			console.log("Terminating...");
@@ -491,7 +492,7 @@ class DOMDig {
 				process.exit(1);
 			}
 			this.ps("Running Sequence Builder, use Domdig's DevTools panel ...");
-			const builder = new SequenceBuilder(targetUrl.href, options);
+			const builder = new SequenceBuilder(this.targetUrl.href, options);
 			const builderResult = await builder.run();
 			if(builderResult.discart){
 				process.exit(0);
@@ -501,19 +502,18 @@ class DOMDig {
 			if(builderResult.next == "scan"){
 				options.initSequence = builderResult.sequence;
 				if(builderResult.targetUrl){
-					targetUrl.href = builderResult.targetUrl;
+					this.targetUrl.href = builderResult.targetUrl;
 				}
 			} else {
 				process.exit(0);
 			}
 		}
 
-		if(options.initSequence){
+		if(this.options.initSequence){
 			try{
 				this.sequenceExecutor = new SequenceExecutor(options.initSequence, status => this.ps(status));
 				if(this.sequenceExecutor.sequence.start.length > 0){
-					await this.loadHtcrawl(targetUrl.href);
-					// await this.crawler.load();
+					await this.loadHtcrawl(this.targetUrl.href);
 					await this.sequenceExecutor.run(this.crawler, "start");
 					await this.crawler.page().close();
 				}
@@ -525,8 +525,18 @@ class DOMDig {
 				process.exit(2);
 			}
 		}
-
-		await this.startScan(targetUrl, payloads, modes, argv.J)
+		if(this.options.interactiveUI){
+			this.ps("Running in interactive, use Domdig's DevTools panel ...");
+			const interactiveUI = new InteractiveUI(this);
+			this.crawler = await htcrawl.launch(this.targetUrl.href, {
+				...this.options,
+				headlessChrome: false,
+				customUI: interactiveUI.customUI
+			});
+			await this.crawler.load();
+		} else {
+			await this.startScan();
+		}
 	}
 }
 
