@@ -192,7 +192,6 @@ function usage(){
 		"   -d FILE_NAME      save all the results to a SQLite3 database",
 		"   -r                print all XHR/fetch and websocket requests triggered while scanning",
 		"   -D                dry-run, do not use any payload, just crawl the page",
-		"   -B                restart the browser every new payload",
 		"   -L FILE_NAME      run the Sequence Builder and save the sequnce to file",
 		"   -O                do not crawl non same-origin frames",
 		"   -h                this help"
@@ -362,12 +361,6 @@ function parseArgs(args, url, database){
 				break;
 			case "D":
 				options.dryRun = args[arg];
-				if(args[arg]){
-					settings.push([`-${arg}`, null]);
-				}
-				break;
-			case "B":
-				options.singleBrowser = !args[arg];
 				if(args[arg]){
 					settings.push([`-${arg}`, null]);
 				}

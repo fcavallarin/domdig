@@ -17,9 +17,7 @@ class DOMDig {
 		this.payloadmap_i = 0;
 		this.vulnsjar = [];
 		this.database = null;
-		this.defaultCrawler = null;
 		this.crawler = null;
-		this.useSingleBrowser = false;
 		this.targetElement = null;
 		this.sequenceExecutor = null;
 		this.options = null;
@@ -56,13 +54,10 @@ class DOMDig {
 	}
 
 	async loadHtcrawl(targetUrl){
-		if(!this.defaultCrawler || !this.useSingleBrowser){
+		if(!this.crawler){
 			// instantiate htcrawl
 			this.crawler = await htcrawl.launch(targetUrl, this.options);
-			this.defaultCrawler = this.crawler;
 		} else {
-			this.crawler = this.defaultCrawler;
-			// firstRun = false;
 			await this.crawler.newPage(targetUrl);
 		}
 		if(this.options.localStorage){
@@ -264,8 +259,6 @@ class DOMDig {
 				return null;
 			}
 		}
-
-		// return this.crawler;
 	}
 
 	async scanDom(){
@@ -284,11 +277,7 @@ class DOMDig {
 	async close(){
 		await utils.sleep(200);
 		try{
-			if(this.useSingleBrowser){
-				await this.crawler.page().close();
-			}else {
-				await this.crawler.browser().close();
-			}
+			await this.crawler.page().close();
 		}catch(e){}
 	}
 
@@ -333,12 +322,9 @@ class DOMDig {
 		} catch(ex){
 			if(retries > 0){
 				retries--;
-				if(this.defaultCrawler){
-					try{
-						await this.defaultCrawler.browser().close();
-					}catch(e){}
-					this.defaultCrawler = null;
-				}
+				try{
+					await this.crawler.page().close();
+				}catch(e){}
 				utils.printWarning("Unexpected error, retrying..." + ex);
 				continue;
 			} else {
@@ -445,7 +431,7 @@ class DOMDig {
 
 	async run() {
 		var targetUrl;
-		const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "B", "S", "O"]});
+		const argv = require('minimist')(process.argv.slice(2), {boolean:["l", "J", "q", "T", "D", "r", "S", "O"]});
 		if(argv.q)VERBOSE = false;
 		if(VERBOSE)utils.banner();
 		if('h' in argv){
@@ -492,10 +478,6 @@ class DOMDig {
 			process.exit(1);
 		}
 		var payloads = argv.P ? utils.loadPayloadsFromFile(argv.P) : defpayloads.xss;
-
-		if(options.singleBrowser){
-			this.useSingleBrowser = true;
-		}
 
 		const sigHandler = () => {
 			console.log("Terminating...");
